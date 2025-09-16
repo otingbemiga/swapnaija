@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-in-out forwards;
+}
+
+
+video {
+  object-fit: cover;
+  background: black;
+}
+
+
+/* Swiper core styles */
+@import 'swiper/css';
+
+/* Optional modules */
+@import 'swiper/css/navigation';
+@import 'swiper/css/pagination';
+@import 'swiper/css/scrollbar';
+@import 'swiper/css/effect-fade';
