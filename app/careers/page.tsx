@@ -10,7 +10,7 @@ export default function CareersPage() {
       type: 'Full-time',
       description:
         'Join our product team to build sleek, responsive web applications using React, Next.js, and Tailwind.',
-      link: '/careers/frontend-developer',
+      link: '/support',
     },
     {
       title: 'Backend Engineer',
@@ -18,7 +18,7 @@ export default function CareersPage() {
       type: 'Full-time',
       description:
         'Help us scale our API and database systems using Node.js, Supabase, and PostgreSQL.',
-      link: '/careers/backend-engineer',
+      link: '/support',
     },
     {
       title: 'Product Designer',
@@ -26,7 +26,7 @@ export default function CareersPage() {
       type: 'Contract',
       description:
         'Design beautiful, user-friendly interfaces and work closely with developers to deliver a great experience.',
-      link: '/careers/product-designer',
+      link: '/support',
     },
   ];
 
@@ -89,7 +89,7 @@ export default function CareersPage() {
           stay in touch.
         </p>
         <Link
-          href="/contact"
+          href="/support"
           className="bg-green-600 text-white px-6 py-3 rounded font-semibold hover:bg-green-700"
         >
           Get In Touch

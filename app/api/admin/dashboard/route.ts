@@ -1,48 +1,44 @@
-// app/api/admin/dashboard/route.ts
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // ✅ bypass RLS
-);
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // service role key
+)
 
-export async function GET() {
+const ADMINS = ['onefirstech@gmail.com', 'admin@swapnaija.com.ng']
+
+export async function GET(req: Request) {
   try {
-    // Pending
-    const { data: pending, error: pendingErr } = await supabase
-      .from("items")
-      .select("id")
-      .eq("status", "pending");
-    if (pendingErr) throw pendingErr;
+    const authHeader = req.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
 
-    // Approved
-    const { data: approved, error: approvedErr } = await supabase
-      .from("items")
-      .select("id")
-      .eq("status", "approved");
-    if (approvedErr) throw approvedErr;
+    const token = authHeader.replace('Bearer ', '')
 
-    // Rejected
-    const { data: rejected, error: rejectedErr } = await supabase
-      .from("items")
-      .select("id")
-      .eq("status", "rejected");
-    if (rejectedErr) throw rejectedErr;
+    // ✅ Verify the token
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token)
 
-    // Users with items → group by user_id
-    const { data: usersWithItems, error: usersErr } = await supabase
-      .from("items")
-      .select("user_id", { count: "exact" });
-    if (usersErr) throw usersErr;
-    const uniqueUsers = new Set(usersWithItems?.map((i) => i.user_id));
+    if (error || !user) {
+      return NextResponse.json({ error: 'Invalid user' }, { status: 401 })
+    }
 
-    // Successful swaps
-    const { data: swaps, error: swapsErr } = await supabase
-      .from("swap_offers")
-      .select("id")
-      .eq("status", "accepted");
-    if (swapsErr) throw swapsErr;
+    if (!ADMINS.includes(user.email!)) {
+      return NextResponse.json({ error: 'Unauthorized – Admins only' }, { status: 403 })
+    }
+
+    // ✅ Fetch stats
+    const { data: pending } = await supabase.from('items').select('id').eq('status', 'pending')
+    const { data: approved } = await supabase.from('items').select('id').eq('status', 'approved')
+    const { data: rejected } = await supabase.from('items').select('id').eq('status', 'rejected')
+    const { data: usersWithItems } = await supabase.from('items').select('user_id')
+    const { data: swaps } = await supabase.from('swap_offers').select('id').eq('status', 'accepted')
+
+    const uniqueUsers = new Set(usersWithItems?.map((i) => i.user_id))
 
     return NextResponse.json({
       pending: pending?.length || 0,
@@ -50,12 +46,9 @@ export async function GET() {
       rejected: rejected?.length || 0,
       users: uniqueUsers.size,
       swaps: swaps?.length || 0,
-    });
+    })
   } catch (err: any) {
-    console.error("🔥 Dashboard API failed:", err);
-    return NextResponse.json(
-      { error: err.message || "Internal Server Error" },
-      { status: 500 }
-    );
+    console.error('🔥 Dashboard API failed:', err)
+    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 })
   }
 }

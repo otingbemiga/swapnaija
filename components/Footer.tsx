@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import emailjs from '@emailjs/browser';
+import { FaTwitter, FaFacebookF, FaInstagram, FaYoutube } from 'react-icons/fa';
 
 export default function Footer() {
   const [email, setEmail] = useState('');
@@ -83,14 +84,14 @@ export default function Footer() {
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6 text-sm border-t border-gray-700 pt-10">
         <div>
           <h3 className="text-lg font-bold mb-2">
-            <span className="text-green-500">SwapHub</span>
+            <span className="text-green-500">SwapNaija</span>
           </h3>
           <p className="text-gray-400 mb-2">
             Enabling individuals to swap goods & services using their phone, bridging communities.
           </p>
-          <p className="text-gray-400">📍 Lagos, Nigeria</p>
-          <p className="text-gray-400">📞 +234 123 456 7890</p>
-          <p className="text-gray-400">📧 hello@SwapHub.com</p>
+          <p className="text-gray-400">📍 Ogun State, Nigeria</p>
+          <p className="text-gray-400">📞 +234 803 658 0132</p>
+          <p className="text-gray-400">📧 admin@swapnaija.com.ng</p>
         </div>
 
         <div>
@@ -138,13 +139,41 @@ export default function Footer() {
         </div>
       </div>
 
-      <div className="mt-8 border-t border-gray-700 pt-6 flex flex-col md:flex-row justify-between items-center text-xs text-gray-400">
-        <p>© 2025 SwapHub. Bringing people together with ❤️.</p>
+      <div className="mt-8 border-t border-gray-700 pt-6 flex flex-col md:flex-row justify-around items-center text-xs text-gray-400">
+        <p>© 2025 SwapNaija. Bringing people together with ❤️.</p>
         <div className="flex gap-4 text-lg mt-4 md:mt-0">
-          <a href="https://twitter.com" target="_blank" rel="noopener noreferrer">Twitter</a>
-          <a href="https://facebook.com" target="_blank" rel="noopener noreferrer">Facebook</a>
-          <a href="https://instagram.com" target="_blank" rel="noopener noreferrer">Instagram</a>
-          <a href="https://youtube.com" target="_blank" rel="noopener noreferrer">YouTube</a>
+          <a
+            href="https://twitter.com/otingbemiga01"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-green-500 transition"
+          >
+            <FaTwitter />
+          </a>
+          <a
+            href="https://facebook.com/otingbemiga"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-green-500 transition"
+          >
+            <FaFacebookF />
+          </a>
+          <a
+            href="https://instagram.com/otingbemiga01"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-green-500 transition"
+          >
+            <FaInstagram />
+          </a>
+          <a
+            href="https://youtube.com/otingbemiga01"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-green-500 transition"
+          >
+            <FaYoutube />
+          </a>
         </div>
       </div>
     </footer>

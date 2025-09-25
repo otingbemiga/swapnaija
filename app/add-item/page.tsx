@@ -22,6 +22,8 @@ export default function AddItemPage() {
   const router = useRouter();
   const session = useSession();
 
+  const [agreementAccepted, setAgreementAccepted] = useState(false); // ✅ new state
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [desiredSwap, setDesiredSwap] = useState('');
@@ -76,6 +78,11 @@ export default function AddItemPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!agreementAccepted) {
+      toast.error('⚠️ You must accept the User Agreement before adding an item.');
+      return;
+    }
 
     if (
       !title ||
@@ -197,15 +204,58 @@ export default function AddItemPage() {
   return (
     <>
       <Head>
-        <title>Add Item | SwapHub</title>
+        <title>Add Item | SwapNaija</title>
       </Head>
       <main
         className="min-h-screen bg-cover bg-center relative flex py-15 items-center justify-center px-4"
         style={{ backgroundImage: "url('/swap-bg.jpg')" }}
       >
         <div className="absolute inset-0 bg-green-900 bg-opacity-60 z-0" />
+
+        {/* ✅ User Agreement Modal */}
+        {!agreementAccepted && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70">
+            <motion.div
+              className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full space-y-4"
+              initial={{ opacity: 0, y: -50 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <h2 className="text-xl font-bold text-center text-red-700">
+                🚨 User Agreement (Strict Policy)
+              </h2>
+              <p className="text-gray-700 text-sm leading-relaxed">
+                By proceeding, you confirm that <strong>any item you list on SwapNaija is your
+                rightful property</strong>. You further affirm that the item is <strong>NOT stolen,
+                illegally obtained, or involved in any fraudulent activity</strong>.  
+                <br /><br />
+                Submitting stolen or fraudulent items will result in <strong>immediate account
+                termination</strong>, possible <strong>legal action</strong>, and cooperation with
+                law enforcement agencies.  
+              </p>
+              <div className="flex justify-between mt-4">
+                <button
+                  onClick={() => router.push('/')}
+                  className="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500"
+                >
+                  Decline
+                </button>
+                <button
+                  onClick={() => setAgreementAccepted(true)}
+                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                >
+                  I Agree
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* ✅ Main Form (disabled if agreement not accepted) */}
         <motion.div
-          className="z-10 bg-white/90 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-2xl space-y-6"
+          className={`z-10 bg-white/90 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-2xl space-y-6 ${
+            !agreementAccepted ? 'pointer-events-none opacity-40' : ''
+          }`}
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7 }}

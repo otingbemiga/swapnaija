@@ -19,7 +19,7 @@ export default function ContactPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    alert('📩 Message sent! Thank you for contacting SwapHub.');
+    alert('📩 Message sent! Thank you for contacting SwapNaija.');
     setForm({ name: '', email: '', phone: '', business: '', message: '' });
   };
 
@@ -75,10 +75,14 @@ export default function ContactPage() {
               required
             >
               <option value="">Select swap category</option>
-              <option value="Goods">Goods</option>
+              <option value="Pood">Food Item</option>
+              <option value="Phone">Services</option>
+              <option value="Electronic">Electronics</option>
+              <option value="Furniture">Furniturer</option>
+              <option value="Wears">Wears</option>
+              <option value="Farm">Farm Produce</option>
               <option value="Services">Services</option>
-              <option value="Local Community">Local Community</option>
-              <option value="Other">Other</option>
+              <option value="Others">Others</option>
             </select>
           </div>
 
@@ -108,24 +112,24 @@ export default function ContactPage() {
               <p className="font-semibold text-gray-800 flex items-center gap-2">
                 <FaEnvelope className="text-green-600" /> Email
               </p>
-              <p className="text-gray-600 text-sm">hello@SwapHub.com</p>
-              <p className="text-gray-600 text-sm">support@SwapHub.com</p>
+              <p className="text-gray-600 text-sm">admin@swapnaija.com.ng</p>
+              <p className="text-gray-600 text-sm">support@swapnija.com.ng</p>
             </div>
 
             <div>
               <p className="font-semibold text-gray-800 flex items-center gap-2">
                 <FaPhone className="text-green-600" /> Phone
               </p>
-              <p className="text-gray-600 text-sm">+234 (0) 123 456 7890</p>
-              <p className="text-gray-600 text-sm">+234 (0) 987 654 3210</p>
+              <p className="text-gray-600 text-sm">+234 (0) 803 658 0132</p>
+              <p className="text-gray-600 text-sm">+234 (0) 8085088031</p>
             </div>
 
             <div>
               <p className="font-semibold text-gray-800 flex items-center gap-2">
                 <FaMapMarkerAlt className="text-green-600" /> Office
               </p>
-              <p className="text-gray-600 text-sm">123 Swap Hub District</p>
-              <p className="text-gray-600 text-sm">Victoria Island, Lagos, Nigeria</p>
+              <p className="text-gray-600 text-sm"> Mowe</p>
+              <p className="text-gray-600 text-sm">Ogun State, Nigeria</p>
             </div>
 
             <div>

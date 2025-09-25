@@ -8,7 +8,7 @@ export default function AboutPage() {
   return (
     <main className="min-h-screen bg-white text-black">
       <Head>
-        <title>About | SwapHub</title>
+        <title>About | SwapNaija</title>
       </Head>
 
       {/* Hero Section */}
@@ -20,7 +20,7 @@ export default function AboutPage() {
             transition={{ duration: 0.5 }}
             className="text-4xl md:text-5xl font-bold text-green-400 mb-4"
           >
-            About SwapHub
+            About SwapNaija
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 10 }}
@@ -37,10 +37,10 @@ export default function AboutPage() {
       <section className="py-20 px-6 max-w-5xl mx-auto">
         <h2 className="text-3xl font-bold text-green-700 mb-6">Our Story</h2>
         <p className="text-gray-800 leading-relaxed mb-4">
-          In a country where cash can be tight, internet isn’t always stable, and access to resources is unequal, SwapHub was born from a simple question: What if we could trade what we have for what we need?
+          In a country where cash can be tight, internet isn’t always stable, and access to resources is unequal, SwapNaija was born from a simple question: What if we could trade what we have for what we need?
         </p>
         <p className="text-gray-800 leading-relaxed mb-4">
-          SwapHub is a bold initiative to empower everyday Nigerians, from farmers in Sokoto to traders in Aba, with a platform to swap items using points instead of naira. Whether you're in Lagos or Gombe, you can donate what you don't need and gain access to what you do. All from your phone online.
+          SwapNaija is a bold initiative to empower everyday Nigerians, from farmers in Sokoto to traders in Aba, with a platform to swap items using points instead of naira. Whether you're in Lagos or Gombe, you can donate what you don't need and gain access to what you do. All from your phone online.
         </p>
         <p className="text-gray-800 leading-relaxed">
           Our dream is to make sure that nothing is wasted, and no one is left behind.

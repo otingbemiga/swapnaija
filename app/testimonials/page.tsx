@@ -14,7 +14,7 @@ export default function TestimonialsPage() {
 
   const testimonials = [
     { state: 'Kano', text: 'Swapped my old fan for rice. Incredible!', name: 'Amina' },
-    { state: 'Enugu', text: 'Exchanged clothes for school bags. God bless SwapHub!', name: 'John' },
+    { state: 'Enugu', text: 'Exchanged clothes for school bags. God bless SwapNaija!', name: 'John' },
     { state: 'Borno', text: 'Even in the village, I was able to swap via SMS!', name: 'Fatima' },
     { state: 'Oyo', text: 'Old phone gone. Got food in return. Love it!', name: 'Tunde' },
     { state: 'Anambra', text: 'Very smart. No cash but I still got what I needed.', name: 'Ngozi' },

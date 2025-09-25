@@ -31,7 +31,7 @@ export default function ForgotPasswordPage() {
   return (
     <>
       <Head>
-        <title>Reset Password | SwapHub</title>
+        <title>Reset Password | SwapNaija</title>
       </Head>
 
       <main

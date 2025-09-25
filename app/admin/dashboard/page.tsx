@@ -23,25 +23,37 @@ export default function AdminDashboardPage() {
   // ✅ Restrict to admin only
   useEffect(() => {
     if (!session) return
-    if (session.user.email === 'onefirstech@gmail.com') {
+    if (session.user?.email === 'onefirstech@gmail.com' || session.user?.email === 'admin@swapnaija.com.ng') {
       setIsAdmin(true)
     } else {
       router.replace('/user/dashboard')
     }
   }, [session, router])
 
-  // ✅ Fetch stats from API
+  // ✅ Fetch stats with token
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/admin/dashboard')
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to fetch dashboard stats')
-      }
+      const token =
+        (session as any)?.getIdToken?.() || (session as any)?.access_token
+
+      if (!token) throw new Error('No auth token found')
+
+      const res = await fetch('/api/admin/dashboard', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      // ✅ Parse JSON once
       const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to fetch dashboard stats')
+      }
+
       setStats(data)
     } catch (err: any) {
-      console.error(err)
+      console.error('🔥 fetchStats error:', err)
       toast.error(err.message)
     }
   }
@@ -55,11 +67,14 @@ export default function AdminDashboardPage() {
 
   return (
     <main className="p-6 max-w-7xl mx-auto space-y-10">
-      <motion.h1 className="text-2xl font-bold text-green-700">Admin Dashboard 👋</motion.h1>
+      <motion.h1 className="text-2xl font-bold text-green-700">
+        Admin Dashboard 👋
+      </motion.h1>
 
       {/* ✅ Summary Line */}
       <p className="text-gray-700 font-medium">
-        👉 Users: {stats.users} | Pending: {stats.pending} | Approved: {stats.approved} | Rejected: {stats.rejected} | Swaps: {stats.swaps}
+        👉 Users: {stats.users} | Pending: {stats.pending} | Approved:{' '}
+        {stats.approved} | Rejected: {stats.rejected} | Swaps: {stats.swaps}
       </p>
 
       {/* ✅ Stats (Clickable) */}

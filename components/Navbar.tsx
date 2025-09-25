@@ -46,7 +46,11 @@ export default function Navbar() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [bellPulse, setBellPulse] = useState(false); // for animation
 
-  const isAdmin = session?.user?.email === 'onefirstech@gmail.com';
+  // Admin emails list (lowercase) — update as needed
+  const ADMIN_EMAILS = ['onefirstech@gmail.com', 'admin@swapnaija.com.ng'];
+  const userEmailLower = session?.user?.email?.toLowerCase() || '';
+  const isAdmin = ADMIN_EMAILS.includes(userEmailLower);
+
   const dashboardLink = isAdmin ? '/admin/dashboard' : '/user/userdashboard';
   const notificationLink = isAdmin ? '/admin/notifications' : '/user/notifications';
 
@@ -64,10 +68,10 @@ export default function Navbar() {
   // Load user details
   useEffect(() => {
     if (session?.user) {
-      const fullName = session.user.user_metadata?.fullName || '';
+      const fullName = (session.user.user_metadata?.fullName as string) || '';
       const first = fullName.trim().split(' ')[0] || 'User';
       setFirstName(first.charAt(0).toUpperCase() + first.slice(1));
-      setAvatarUrl(session.user.user_metadata?.avatar_url || '/default-avatar.png');
+      setAvatarUrl((session.user.user_metadata as any)?.avatar_url || '/default-avatar.png');
     } else {
       setFirstName(null);
       setAvatarUrl(null);
@@ -76,7 +80,7 @@ export default function Navbar() {
 
   // Scroll effect
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 100);
+    const handleScroll = () => setIsScrolled(window.scrollY > 150);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
@@ -86,13 +90,13 @@ export default function Navbar() {
     try {
       if (!session?.user?.id) return;
 
-      const query = supabase
+      let query = supabase
         .from('notifications')
         .select('id, message, status, created_at')
         .order('created_at', { ascending: false })
         .limit(5);
 
-      if (!isAdmin) query.eq('recipient_id', session.user.id);
+      if (!isAdmin) query = query.eq('recipient_id', session.user.id);
 
       const { data, error } = await query;
       if (error) {
@@ -100,8 +104,8 @@ export default function Navbar() {
         return;
       }
 
-      setNotifications(data || []);
-      setUnreadCount((data || []).filter((n) => n.status === 'unread').length);
+      setNotifications((data as Notification[]) || []);
+      setUnreadCount(((data as Notification[]) || []).filter((n) => n.status === 'unread').length);
     } catch (err: any) {
       console.error('❌ Unexpected error fetching notifications:', err?.message || err);
     }
@@ -109,7 +113,8 @@ export default function Navbar() {
 
   useEffect(() => {
     fetchNotifications();
-  }, [session]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, isAdmin]);
 
   // Realtime updates
   useEffect(() => {
@@ -132,6 +137,7 @@ export default function Navbar() {
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, isAdmin]);
 
   // Mark single as read
@@ -179,29 +185,140 @@ export default function Navbar() {
       <style>{bellPulseStyle}</style>
 
       <nav
-        className={`sticky top-0 z-50 flex items-center justify-between px-6 py-4 transition-all duration-300 shadow ${
+        className={`sticky top-0 z-50 flex items-center justify-between px-6 transition-all duration-300 shadow ${
           isScrolled ? 'bg-white text-black' : 'bg-black text-white'
         }`}
       >
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2" onClick={handleLogoClick}>
-          <Image src={logo} alt="SwapHub Logo" width={150} height={120} className="rounded-full" />
+          <Image src={logo} alt="SwapNaija Logo" width={150} height={120} className="rounded-full" />
         </Link>
 
-        {/* Mobile menu toggle */}
-        <div className="md:hidden text-2xl z-50" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
-          {isMobileMenuOpen ? <FiX /> : <FiMenu />}
+        {/* Mobile right icons (bell + profile or login/register) */}
+        <div className="flex items-center gap-4 md:hidden">
+          {firstName ? (
+            <>
+              {/* Bell + dropdown (mobile) */}
+              <div className="relative">
+                <BellIcon />
+                {isNotifOpen && (
+                  <div className="absolute right-0 mt-2 bg-white text-black shadow-lg rounded-md w-72 max-h-80 overflow-y-auto z-50">
+                    <div className="p-3 border-b font-semibold flex justify-between items-center">
+                      <span>Notifications</span>
+                      {unreadCount > 0 && (
+                        <button onClick={markAllAsRead} className="text-xs text-blue-600 hover:underline">
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
+                    {notifications.length > 0 ? (
+                      notifications.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            setActiveNotification(n);
+                            if (n.status === 'unread') markAsRead(n.id);
+                          }}
+                          className={`px-3 py-2 text-sm border-b last:border-0 cursor-pointer ${
+                            n.status === 'unread' ? 'bg-green-50 font-medium' : 'bg-white'
+                          }`}
+                        >
+                          {n.message}
+                          <div className="text-xs text-gray-500">{new Date(n.created_at).toLocaleString()}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-3 text-sm text-gray-500">No notifications</div>
+                    )}
+                    <Link href={notificationLink} className="block text-center py-2 text-sm text-green-600 hover:bg-green-50">
+                      View all
+                    </Link>
+                  </div>
+                )}
+              </div>
+
+              {/* Profile + dropdown (mobile) */}
+              <div className="relative">
+                <Image
+                  src={avatarUrl || '/default-avatar.png'}
+                  alt="Profile"
+                  width={28}
+                  height={28}
+                  className="rounded-full cursor-pointer border border-green-500"
+                  onClick={() => setIsProfileMenuOpen((prev) => !prev)}
+                />
+                {isProfileMenuOpen && (
+                  <div className="absolute right-0 mt-2 bg-white border rounded-md shadow-lg text-black w-44 z-50">
+                    <div className="px-4 py-2 border-b">
+                      <p className="text-sm">
+                        Hi, Welcome <strong>{firstName}</strong>{' '}
+                        {isAdmin && <span className="text-yellow-500 text-xs">👑 Admin</span>}
+                      </p>
+                    </div>
+                    <Link
+                      href={dashboardLink}
+                      className="block px-4 py-2 text-sm hover:bg-green-100"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                    >
+                      My Dashboard
+                    </Link>
+                    {isAdmin && (
+                      <Link
+                        href="/admin/pending-items"
+                        className="block px-4 py-2 text-sm hover:bg-yellow-100"
+                        onClick={() => setIsProfileMenuOpen(false)}
+                      >
+                        📋 Approve Items
+                      </Link>
+                    )}
+                    <button
+                      onClick={handleLogout}
+                      className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-100"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <Link href="/auth/register" className="bg-green-600 text-white px-3 py-1 text-sm rounded-md">
+                Get Started
+              </Link>
+              <Link href="/auth/login" className="border border-green-600 text-green-600 px-3 py-1 text-sm rounded-md">
+                Login
+              </Link>
+            </>
+          )}
+          <div className="text-2xl cursor-pointer" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+            {isMobileMenuOpen ? <FiX /> : <FiMenu />}
+          </div>
         </div>
 
-        {/* Menu links */}
+        {/* Desktop menu */}
         <div
           className={`fixed top-0 right-0 h-full w-2/3 bg-black text-white flex flex-col gap-6 p-6
           transform transition-all duration-300 ease-in-out
           ${isMobileMenuOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'}
           md:static md:flex md:flex-1 md:flex-row md:items-center md:justify-center md:gap-6 md:bg-transparent md:text-inherit md:w-auto md:h-auto md:p-0 md:opacity-100 md:translate-x-0`}
         >
-          {/* Links */}
-          <Link href="/swap" className={`hover:text-green-500 ${isActive('/swap') ? 'font-bold text-green-400' : ''}`}>
+          {/* Close button inside mobile panel */}
+          <div className="md:hidden absolute top-4 right-4 z-50">
+            <button
+              aria-label="Close menu"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="p-2 rounded-full bg-white text-black"
+            >
+              <FiX />
+            </button>
+          </div>
+
+          <Link
+            href="/swap"
+            className={`hover:text-green-500 ${isActive('/swap') ? 'font-bold text-green-400' : ''}`}
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
             Swap Item
           </Link>
 
@@ -211,7 +328,10 @@ export default function Navbar() {
             onMouseEnter={() => setIsCategoryOpen(true)}
             onMouseLeave={() => setIsCategoryOpen(false)}
           >
-            <button onClick={() => setIsCategoryOpen((prev) => !prev)} className="hover:text-green-500 flex items-center gap-1">
+            <button
+              onClick={() => setIsCategoryOpen((prev) => !prev)}
+              className="hover:text-green-500 flex items-center gap-1"
+            >
               Categories ▾
             </button>
             {isCategoryOpen && (
@@ -233,19 +353,40 @@ export default function Navbar() {
             )}
           </div>
 
-          <Link href="/testimonials" className={`hover:text-green-500 ${isActive('/testimonials') ? 'font-bold text-green-400' : ''}`}>
-            Success Stories
-          </Link>
-          <Link href="/support" className={`hover:text-green-500 ${isActive('/support') ? 'font-bold text-green-400' : ''}`}>
+        
+          <Link
+            href="/support"
+            className={`hover:text-green-500 ${isActive('/support') ? 'font-bold text-green-400' : ''}`}
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
             Support
           </Link>
+
+          {/* Show buttons also inside mobile menu if logged out */}
+          {!firstName && (
+            <div className="flex flex-col gap-3 md:hidden">
+              <Link
+                href="/auth/register"
+                className="bg-green-600 text-white px-4 py-2 rounded-md text-center"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                Get Started
+              </Link>
+              <Link
+                href="/auth/login"
+                className="border border-green-600 text-green-600 px-4 py-2 rounded-md text-center"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                Login
+              </Link>
+            </div>
+          )}
         </div>
 
-        {/* Desktop profile */}
+        {/* Desktop profile (unchanged) */}
         <div className="hidden md:flex items-center gap-4 relative">
           {firstName ? (
             <>
-              {/* Notifications */}
               <div className="relative">
                 <BellIcon />
                 {isNotifOpen && (
@@ -302,11 +443,19 @@ export default function Navbar() {
                         {isAdmin && <span className="text-yellow-500 text-xs">👑 Admin</span>}
                       </p>
                     </div>
-                    <Link href={dashboardLink} className="block px-4 py-2 text-sm hover:bg-green-100" onClick={() => setIsProfileMenuOpen(false)}>
+                    <Link
+                      href={dashboardLink}
+                      className="block px-4 py-2 text-sm hover:bg-green-100"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                    >
                       My Dashboard
                     </Link>
                     {isAdmin && (
-                      <Link href="/admin/pending-items" className="block px-4 py-2 text-sm hover:bg-yellow-100" onClick={() => setIsProfileMenuOpen(false)}>
+                      <Link
+                        href="/admin/pending-items"
+                        className="block px-4 py-2 text-sm hover:bg-yellow-100"
+                        onClick={() => setIsProfileMenuOpen(false)}
+                      >
                         📋 Approve Items
                       </Link>
                     )}

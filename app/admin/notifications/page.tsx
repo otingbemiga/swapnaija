@@ -3,20 +3,20 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { toast } from "react-hot-toast";
-import { Crown } from "lucide-react"; // crown icon for admin header
+import { Crown } from "lucide-react"; // crown icon
 import Link from "next/link";
 
 type NotificationRaw = Record<string, any>;
 
 type Notification = {
-  notification_id?: string; // RPC may alias id -> notification_id
-  id?: string;              // fallback if RPC returns "id"
+  notification_id?: string;
+  id?: string;
   type?: string;
   message?: string;
   sender_email?: string | null;
   recipient_id?: string;
   status?: "unread" | "read" | string;
-  item_id?: string | null; // always use item_id after normalization
+  item_id?: string | null;
   created_at?: string;
 };
 
@@ -28,38 +28,34 @@ export default function AdminNotificationsPage() {
     "all"
   );
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Helper: normalize note shape
-  const normalize = (n: NotificationRaw): Notification => {
-    return {
-      notification_id: n.notification_id ?? n.id ?? n.notificationId ?? n._id,
-      id: n.id ?? n.notification_id ?? n.notificationId ?? n._id,
-      type: n.type ?? n.kind ?? "notification",
-      message: n.message ?? n.body ?? "",
-      sender_email: n.sender_email ?? n.sender ?? null,
-      recipient_id: n.recipient_id ?? n.recipient ?? null,
-      status: n.status ?? "unread",
-      item_id: n.item_id ?? n.itemId ?? null, // normalize all to item_id
-      created_at:
-        n.created_at ??
-        n.inserted_at ??
-        n.createdAt ??
-        n.insertedAt ??
-        new Date().toISOString(),
-    };
-  };
+  // Normalize shape
+  const normalize = (n: NotificationRaw): Notification => ({
+    notification_id: n.notification_id ?? n.id ?? n.notificationId ?? n._id,
+    id: n.id ?? n.notification_id ?? n.notificationId ?? n._id,
+    type: n.type ?? n.kind ?? "notification",
+    message: n.message ?? n.body ?? "",
+    sender_email: n.sender_email ?? n.sender ?? null,
+    recipient_id: n.recipient_id ?? n.recipient ?? null,
+    status: n.status ?? "unread",
+    item_id: n.item_id ?? n.itemId ?? null,
+    created_at:
+      n.created_at ??
+      n.inserted_at ??
+      n.createdAt ??
+      n.insertedAt ??
+      new Date().toISOString(),
+  });
 
-  // Fetch notifications
+  // Fetch
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
       const rpcResult = await supabase.rpc("get_admin_notifications");
 
       if (rpcResult.error) {
-        console.warn(
-          "RPC get_admin_notifications failed, falling back to direct select:",
-          rpcResult.error.message
-        );
+        console.warn("RPC failed, fallback to direct select:", rpcResult.error.message);
         const { data, error } = await supabase
           .from("notifications")
           .select(
@@ -72,9 +68,7 @@ export default function AdminNotificationsPage() {
         return;
       }
 
-      // RPC success
-      const arr = (rpcResult.data || []) as NotificationRaw[];
-      setNotifications(arr.map(normalize));
+      setNotifications((rpcResult.data || []).map(normalize));
     } catch (err: any) {
       console.error("❌ Error fetching admin notifications:", err?.message || err);
       toast.error("Failed to load notifications");
@@ -87,16 +81,14 @@ export default function AdminNotificationsPage() {
   const markAsRead = useCallback(
     async (note: Notification) => {
       const id = note.notification_id ?? note.id;
-      if (!id) {
-        toast.error("Notification missing id, cannot mark read");
-        return;
-      }
-      if (note.status === "read") return;
+      if (!id) return toast.error("Missing id");
 
+      if (note.status === "read") return;
       setUpdatingId(id);
+
       const prev = notifications;
-      setNotifications((prevArr) =>
-        prevArr.map((n) =>
+      setNotifications((arr) =>
+        arr.map((n) =>
           (n.notification_id ?? n.id) === id ? { ...n, status: "read" } : n
         )
       );
@@ -109,14 +101,11 @@ export default function AdminNotificationsPage() {
         });
 
         const body = await res.json();
-        if (!res.ok) {
-          throw new Error(body?.error || body?.message || "Failed to mark read");
-        }
-
+        if (!res.ok) throw new Error(body?.error || "Failed to mark read");
         toast.success("Marked as read");
       } catch (err: any) {
-        console.error("❌ Error marking notification read:", err?.message || err);
-        toast.error("Failed to mark notification read");
+        console.error("❌ Error marking read:", err.message);
+        toast.error("Failed to mark read");
         setNotifications(prev);
       } finally {
         setUpdatingId(null);
@@ -125,34 +114,52 @@ export default function AdminNotificationsPage() {
     [notifications]
   );
 
-  // When user clicks a notification
-  const handleNotificationClick = async (note: Notification) => {
-    await markAsRead(note);
+  // Delete notification (calls secure API route)
+  const deleteNotification = async (note: Notification) => {
+    const id = note.notification_id ?? note.id;
+    if (!id) return toast.error("Missing id");
 
-    // navigate only if item_id is present
-    if (note.item_id) {
-      window.location.href = `/item/${note.item_id}`;
+    if (!confirm("Are you sure you want to delete this notification?")) return;
+
+    setDeletingId(id);
+    const prev = notifications;
+    setNotifications((arr) => arr.filter((n) => (n.notification_id ?? n.id) !== id));
+
+    try {
+      const res = await fetch(`/api/delete-notification?id=${id}`, {
+        method: "DELETE",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Failed to delete");
+
+      toast.success("Notification deleted");
+    } catch (err: any) {
+      console.error("❌ Error deleting:", err.message);
+      toast.error("Failed to delete");
+      setNotifications(prev);
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  // Realtime subscription
+  // Click to open
+  const handleNotificationClick = async (note: Notification) => {
+    await markAsRead(note);
+    if (note.item_id) window.location.href = `/item/${note.item_id}`;
+  };
+
+  // Realtime
   useEffect(() => {
     fetchNotifications();
-
     const channel = supabase
       .channel("admin-notifications")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "notifications" },
         (payload) => {
-          try {
-            const raw = payload.new as NotificationRaw;
-            const n = normalize(raw);
-            setNotifications((prev) => [n, ...prev]);
-            toast(`${n.type} — ${n.message}`, { duration: 5000 });
-          } catch (e) {
-            console.error("Error processing realtime payload:", e);
-          }
+          const raw = payload.new as NotificationRaw;
+          setNotifications((prev) => [normalize(raw), ...prev]);
+          toast(`🔔 ${raw.type}: ${raw.message}`, { duration: 5000 });
         }
       )
       .subscribe();
@@ -172,7 +179,7 @@ export default function AdminNotificationsPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      {/* Header with crown icon + unread badge */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -187,10 +194,7 @@ export default function AdminNotificationsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link
-            href="/admin/notifications"
-            className="text-sm text-gray-600 hover:text-gray-800"
-          >
+          <Link href="/admin/notifications" className="text-sm text-gray-600 hover:text-gray-800">
             View all
           </Link>
           <span className="px-3 py-1 text-sm font-medium bg-gray-100 rounded-full">
@@ -204,16 +208,13 @@ export default function AdminNotificationsPage() {
         {[
           { key: "all", label: `All (${notifications.length})` },
           { key: "unread", label: `Unread (${unreadCount})` },
-          {
-            key: "read",
-            label: `Read (${notifications.length - unreadCount})`,
-          },
+          { key: "read", label: `Read (${notifications.length - unreadCount})` },
         ].map((t) => (
           <button
             key={t.key}
             onClick={() => setActiveFilter(t.key as any)}
             className={`pb-2 px-3 transition ${
-              activeFilter === (t.key as any)
+              activeFilter === t.key
                 ? "border-b-2 border-green-600 font-semibold"
                 : "text-gray-500 hover:text-gray-700"
             }`}
@@ -224,9 +225,7 @@ export default function AdminNotificationsPage() {
       </div>
 
       {loading && <p>Loading notifications...</p>}
-      {!loading && notifications.length === 0 && (
-        <p>No notifications yet — you will see them here when they arrive.</p>
-      )}
+      {!loading && notifications.length === 0 && <p>No notifications yet.</p>}
 
       <ul className="space-y-4 mt-4">
         {filteredNotifications.map((n, idx) => {
@@ -250,16 +249,12 @@ export default function AdminNotificationsPage() {
                       <span className="text-xs text-gray-500">· {n.sender_email}</span>
                     )}
                   </div>
-                  <p className="mt-2 text-sm text-gray-800 leading-relaxed">
-                    {n.message}
-                  </p>
+                  <p className="mt-2 text-sm text-gray-800 leading-relaxed">{n.message}</p>
                 </div>
 
-                <div className="text-right">
+                <div className="text-right space-y-2">
                   <div className="text-xs text-gray-500">
-                    {n.created_at
-                      ? new Date(n.created_at).toLocaleString()
-                      : ""}
+                    {n.created_at ? new Date(n.created_at).toLocaleString() : ""}
                   </div>
 
                   {n.status === "unread" && (
@@ -269,13 +264,23 @@ export default function AdminNotificationsPage() {
                         await markAsRead(n);
                       }}
                       disabled={updatingId === (n.notification_id ?? n.id)}
-                      className="mt-2 text-xs bg-green-600 text-white px-2 py-1 rounded disabled:opacity-60"
+                      className="block text-xs bg-green-600 text-white px-2 py-1 rounded disabled:opacity-60"
                     >
-                      {updatingId === (n.notification_id ?? n.id)
-                        ? "Marking..."
-                        : "Mark as read"}
+                      {updatingId === (n.notification_id ?? n.id) ? "Marking..." : "Mark as read"}
                     </button>
                   )}
+
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteNotification(n);
+                    }}
+                    disabled={deletingId === (n.notification_id ?? n.id)}
+                    className="block text-xs bg-red-600 text-white px-2 py-1 rounded disabled:opacity-60"
+                  >
+                    {deletingId === (n.notification_id ?? n.id) ? "Deleting..." : "Delete"}
+                  </button>
                 </div>
               </div>
             </li>

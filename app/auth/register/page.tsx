@@ -67,7 +67,11 @@ export default function RegisterPage() {
     });
 
     if (error) {
-      toast.error('❌ ' + error.message);
+      if (error.message.includes('already registered')) {
+        toast.error('This email is already in use.');
+      } else {
+        toast.error('❌ ' + error.message);
+      }
       return;
     }
 
@@ -76,14 +80,15 @@ export default function RegisterPage() {
       return;
     }
 
-    toast.success('✅ Registration successful! Please verify your email.');
+    // ✅ Success toast
+    toast.success('🎉 Registration successful! Please check your email to confirm your account.');
     router.push('/auth/login');
   };
 
   return (
     <>
       <Head>
-        <title>Register | SwapHub</title>
+        <title>Register | SwapNaija</title>
       </Head>
 
       <main
@@ -102,7 +107,7 @@ export default function RegisterPage() {
         >
           <div className="text-center mb-4">
             <h2 className="text-xl font-semibold text-green-700">
-              🌍 Join the SwapHub Community
+              🌍 Join the SwapNaija Community
             </h2>
             <p className="text-gray-700 mt-1 italic">
               "Value doesn’t always need cash. Sometimes, your rice is someone’s treasure."

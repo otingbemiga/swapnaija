@@ -10,7 +10,7 @@ export default function AdminTransactionsPage() {
   const session = useSession()
   const [transactions, setTransactions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const isAdmin = session?.user?.email === 'admin@SwapHub.com'
+  const isAdmin = session?.user?.email === 'admin@SwapNaija.com'
 
   useEffect(() => {
     if (!isAdmin) return
