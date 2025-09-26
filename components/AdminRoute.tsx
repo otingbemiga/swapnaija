@@ -2,38 +2,30 @@
 
 import { useEffect, useState, ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/utils/supabase/client"
+import { useSession } from "@supabase/auth-helpers-react"
 
 const ADMIN_EMAILS = ["onefirstech@gmail.com", "admin@swapnaija.com.ng"]
 
 export default function AdminRoute({ children }: { children: ReactNode }) {
-  const [authorized, setAuthorized] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const session = useSession()
   const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [authorized, setAuthorized] = useState(false)
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser()
-
-      if (error || !user) {
-        router.push("/auth/login")
-        return
-      }
-
-      if (ADMIN_EMAILS.includes(user.email!)) {
-        setAuthorized(true)
-      } else {
-        router.push("/")
-      }
-
-      setLoading(false)
+    if (!session) {
+      setLoading(true)
+      return
     }
 
-    checkAuth()
-  }, [router])
+    if (session.user && ADMIN_EMAILS.includes(session.user.email)) {
+      setAuthorized(true)
+    } else {
+      router.replace("/")
+    }
+
+    setLoading(false)
+  }, [session, router])
 
   if (loading) {
     return (
