@@ -2,26 +2,27 @@
 
 import { useEffect, useState, ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { useSession } from "@supabase/auth-helpers-react"
+import { useSession, useSupabaseClient } from "@supabase/auth-helpers-react"
 
 const ADMIN_EMAILS = ["onefirstech@gmail.com", "admin@swapnaija.com.ng"]
 
 export default function AdminRoute({ children }: { children: ReactNode }) {
   const session = useSession()
+  const supabase = useSupabaseClient()
   const router = useRouter()
-  const [loading, setLoading] = useState(true)
   const [authorized, setAuthorized] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!session) {
-      setLoading(true)
+      router.push("/auth/login")
       return
     }
 
-    if (session.user && ADMIN_EMAILS.includes(session.user.email)) {
+    if (ADMIN_EMAILS.includes(session.user?.email || "")) {
       setAuthorized(true)
     } else {
-      router.replace("/")
+      router.push("/")
     }
 
     setLoading(false)

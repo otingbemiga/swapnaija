@@ -25,7 +25,7 @@ export default function HomePage() {
         className="bg-center bg-no-repeat bg-cover relative flex flex-col justify-center items-center text-center py-24 px-4 min-h-screen"
         style={{ backgroundImage: "url('/banner.png')" }}
       >
-        <div className="absolute inset-0 bg-black/45" /> {/* ✅ dark overlay */}
+        <div className="absolute inset-0 bg-black/45" /> {/* dark overlay */}
 
         <div className="relative z-10">
           <motion.h1

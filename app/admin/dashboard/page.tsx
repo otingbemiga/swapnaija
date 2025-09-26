@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useSession } from '@supabase/auth-helpers-react'
+import { useSession, useSupabaseClient } from '@supabase/auth-helpers-react'
 import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 
 export default function AdminDashboardPage() {
   const session = useSession()
+  const supabase = useSupabaseClient()
   const router = useRouter()
 
   const [isAdmin, setIsAdmin] = useState(false)
@@ -20,33 +21,30 @@ export default function AdminDashboardPage() {
   })
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected'>('pending')
 
-  // ✅ Restrict to admin only
+  // ✅ Restrict access to admin only
   useEffect(() => {
     if (!session) return
-    if (session.user?.email === 'onefirstech@gmail.com' || session.user?.email === 'admin@swapnaija.com.ng') {
+    const email = session.user?.email
+    if (email === 'onefirstech@gmail.com' || email === 'admin@swapnaija.com.ng') {
       setIsAdmin(true)
     } else {
-      router.replace('/user/dashboard')
+      router.replace('/user/userdashboard')
     }
   }, [session, router])
 
-  // ✅ Fetch stats with token
+  // ✅ Fetch dashboard stats from Supabase API
   const fetchStats = async () => {
     try {
-      const token =
-        (session as any)?.getIdToken?.() || (session as any)?.access_token
+      if (!session) throw new Error('No active session found')
 
-      if (!token) throw new Error('No auth token found')
-
+      // Use Supabase service role key API or protected endpoint
       const res = await fetch('/api/admin/dashboard', {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${session.access_token}`,
         },
       })
 
-      // ✅ Parse JSON once
       const data = await res.json()
-
       if (!res.ok) {
         throw new Error(data.error || 'Failed to fetch dashboard stats')
       }
