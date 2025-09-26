@@ -79,13 +79,13 @@ export default function HomePage() {
       </section>
 
       {/* Swapping Video Section */}
-      <section className="bg-black text-black py-12 px-4 relative">
+      <section className="bg-black text-black py-12 relative">
         <h2 className="text-3xl font-bold text-center mb-6 text-green-700">
           Watch Swapping in Action
         </h2>
         <div className="flex justify-center">
           <div
-            className="w-full max-w-4xl rounded overflow-hidden shadow-lg relative"
+            className="w-full max-w-6xl rounded overflow-hidden shadow-lg relative"
             style={{ aspectRatio: '16/9', background: '#000' }}
           >
             {/* Video Player */}
@@ -93,11 +93,10 @@ export default function HomePage() {
               <video
                 src="/swap-compressed.mp4"
                 autoPlay
-                muted
                 loop
                 playsInline
-                width="200%"
-                height="150%"
+                controls={false}
+                className="w-full h-full object-cover"
               />
             </div>
 

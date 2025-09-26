@@ -1,6 +1,6 @@
 'use client'
 
-import { SessionProvider } from "next-auth/react"
+
 import SupabaseProvider from "@/components/SupabaseProvider"
 import Navbar from "@/components/Navbar"
 import Footer from "@/components/Footer"
@@ -10,7 +10,7 @@ import ScrollToTop from "@/components/ScrollToTop/page"
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider>
+
       <SupabaseProvider>
         <Navbar />
         {children}
@@ -19,6 +19,6 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         <Footer />
         <LiveChatButton />
       </SupabaseProvider>
-    </SessionProvider>
+
   )
 }
