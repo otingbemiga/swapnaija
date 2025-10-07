@@ -1,4 +1,4 @@
-// app/api/swap-offers/route.ts
+// app/api/messages/route.ts
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
@@ -14,10 +14,10 @@ export async function GET() {
   }
 
   const { data, error } = await supabase
-    .from("swap_offers")
+    .from("messages")
     .select("*")
     .or(`from_user.eq.${user.id},to_user.eq.${user.id}`)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: true });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -36,18 +36,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
 
-  const { to_user, item_id, note } = await req.json();
+  const { to_user, content } = await req.json();
 
-  if (!to_user || !item_id) {
+  if (!to_user || !content) {
     return NextResponse.json(
-      { error: "Missing recipient or item" },
+      { error: "Missing recipient or content" },
       { status: 400 }
     );
   }
 
   const { data, error } = await supabase
-    .from("swap_offers")
-    .insert([{ from_user: user.id, to_user, item_id, note }])
+    .from("messages")
+    .insert([{ from_user: user.id, to_user, content }])
     .select();
 
   if (error) {

@@ -283,12 +283,12 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              <Link href="/auth/register" className="bg-green-600 text-white px-3 py-1 text-sm rounded-md">
+              {/* <Link href="/auth/register" className="bg-green-600 text-white px-3 py-1 text-sm rounded-md">
                 Get Started
               </Link>
               <Link href="/auth/login" className="border border-green-600 text-green-600 px-3 py-1 text-sm rounded-md">
                 Login
-              </Link>
+              </Link> */}
             </>
           )}
           <div className="text-2xl cursor-pointer" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>

@@ -167,7 +167,7 @@ export default function Footer() {
             <FaInstagram />
           </a>
           <a
-            href="https://youtube.com/otingbemiga01"
+            href="https://youtube.com/@otingbemiga"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-green-500 transition"
