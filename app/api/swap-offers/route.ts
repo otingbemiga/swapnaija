@@ -1,58 +1,29 @@
-// app/api/swap-offers/route.ts
-import { NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
-export async function GET() {
-  const supabase = createRouteHandlerClient({ cookies });
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
-  }
-
-  const { data, error } = await supabase
-    .from("swap_offers")
-    .select("*")
-    .or(`from_user.eq.${user.id},to_user.eq.${user.id}`)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
-  return NextResponse.json(data);
-}
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(req: Request) {
-  const supabase = createRouteHandlerClient({ cookies });
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  try {
+    const { offerFrom, offerTo, offeredItemId, requestedItemId } = await req.json()
 
-  if (!user) {
-    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+    if (!offerFrom || !offerTo || !offeredItemId || !requestedItemId) {
+      return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('swap_offers')
+      .insert([{ offer_from: offerFrom, offer_to: offerTo, offered_item_id: offeredItemId, requested_item_id: requestedItemId }])
+      .select()
+      .single()
+
+    if (error) throw error
+    return NextResponse.json(data)
+  } catch (err: any) {
+    console.error('POST /api/swap-offer error:', err)
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
-
-  const { to_user, item_id, note } = await req.json();
-
-  if (!to_user || !item_id) {
-    return NextResponse.json(
-      { error: "Missing recipient or item" },
-      { status: 400 }
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("swap_offers")
-    .insert([{ from_user: user.id, to_user, item_id, note }])
-    .select();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
-  return NextResponse.json(data[0]);
 }

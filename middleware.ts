@@ -1,18 +1,35 @@
 // middleware.ts
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
-import { NextResponse } from 'next/server';
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
-export async function middleware(req: any) {
-  const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next()
+
+  // ✅ Create middleware Supabase client that syncs session cookies
+  const supabase = createMiddlewareClient({ req, res })
+
+  // ✅ Refresh session if needed (this keeps cookies valid)
   const {
-    data: { session }
-  } = await supabase.auth.getSession();
+    data: { session },
+    error,
+  } = await supabase.auth.getSession()
 
-  // Protect ONLY certain pages
-  if (!session && req.nextUrl.pathname.startsWith('/user-only-route')) {
-    return NextResponse.redirect(new URL('/auth/login', req.url));
+  if (error) {
+    console.error('Middleware auth error:', error.message)
   }
 
-  return res;
+  // ✅ Optional: protect specific routes (adjust as needed)
+  if (!session && req.nextUrl.pathname.startsWith('/user-only-route')) {
+    const redirectUrl = req.nextUrl.clone()
+    redirectUrl.pathname = '/auth/login'
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  return res
+}
+
+// ✅ Run middleware on all routes except static assets
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 }

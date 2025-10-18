@@ -1,27 +1,28 @@
+// app/swap/[id]/page.tsx
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
-import { useSession } from '@supabase/auth-helpers-react';
+import { useParams } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useUser } from '@supabase/auth-helpers-react';
 import Image from 'next/image';
 import toast from 'react-hot-toast';
 import FloatingButton from '@/components/FloatingButton';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination } from 'swiper/modules';
-import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
-import { apiFetch } from '@/utils/api'; // ✅ make sure utils/api.ts exists
+import { motion } from 'framer-motion';
+import 'swiper/css';
+import 'swiper/css/navigation';
+import 'swiper/css/pagination';
 
-// Interfaces
 interface Message {
   id: string;
   from_user: string;
   to_user: string;
   content: string;
-  item_id: string;
+  item_a_id?: string;
+  item_b_id?: string;
   created_at?: string;
-  read_at?: string | null;
-  image_url?: string | null;
 }
 
 interface MatchItem {
@@ -29,28 +30,12 @@ interface MatchItem {
   title: string;
   description?: string;
   category?: string;
-  desired_swap?: string;
   condition?: string;
   image_paths?: string[];
   video_paths?: string[];
   estimated_value?: number;
-  cash_balance?: number;
+  desired_swap?: string;
   user_id?: string;
-}
-
-interface Offer {
-  id: string;
-  from_user: string;
-  to_user: string;
-  message: string;
-  suggested_cash_topup: number;
-  created_at: string;
-  my_item?: MatchItem;
-  target_item?: MatchItem;
-  from_profile?: {
-    full_name: string;
-    phone: string;
-  };
 }
 
 interface OwnerProfile {
@@ -60,546 +45,279 @@ interface OwnerProfile {
   address: string;
 }
 
-export default function SwapDetailPage() {
+export default function SwapChatPage() {
   const { id } = useParams();
-  const router = useRouter();
-  const session = useSession();
+  const supabase = createClientComponentClient();
+  const authUser = useUser();
 
   const [item, setItem] = useState<MatchItem | null>(null);
   const [owner, setOwner] = useState<OwnerProfile | null>(null);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [offerMessage, setOfferMessage] = useState('');
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [matchingItems, setMatchingItems] = useState<MatchItem[]>([]);
+  const [session, setSession] = useState<any>(null);
   const [myItems, setMyItems] = useState<MatchItem[]>([]);
   const [myItemId, setMyItemId] = useState<string>('');
 
-  const chatRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
-  const [zoom, setZoom] = useState(1);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Buckets
-  const imageBucketUrl =
-    'https://rzjfumrvmmdluunqsqsp.supabase.co/storage/v1/object/public/item-images/';
-  const videoBucketUrl =
-    'https://rzjfumrvmmdluunqsqsp.supabase.co/storage/v1/object/public/item-videos/';
+  const imageBucketUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '')}/storage/v1/object/public/item-images/`;
+  const videoBucketUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '')}/storage/v1/object/public/item-videos/`;
 
-  const slides =
-    item?.image_paths?.map((p) => ({ type: 'image', path: p })) || [];
+  // Fetch session
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      setSession(data.session);
+    })();
+  }, [supabase]);
 
-  // Fetch item + owner
+  // Fetch item and owner
   useEffect(() => {
     const fetchItem = async () => {
-      const { data: itemData, error } = await supabase
-        .from('items')
-        .select('*')
-        .eq('id', id)
-        .single();
-
+      if (!id) return;
+      const { data: itemData, error } = await supabase.from('items').select('*').eq('id', id).maybeSingle();
       if (error || !itemData) {
         toast.error('Item not found');
         return;
       }
-      setItem(itemData as MatchItem);
-
+      setItem(itemData);
       const { data: ownerData } = await supabase
         .from('profiles')
-        .select('full_name, phone, address, id')
-        .eq('id', (itemData as any).user_id)
-        .single();
-
-      if (ownerData) setOwner(ownerData as OwnerProfile);
-
-      // default matching on load
-      fetchMatching('desired', itemData as MatchItem);
+        .select('id, full_name, phone, address')
+        .eq('id', itemData.user_id)
+        .maybeSingle();
+      if (ownerData) setOwner(ownerData);
     };
-
-    if (id) fetchItem();
-  }, [id]);
-
-  // ✅ Matching fetch function
-  const fetchMatching = async (
-    type: 'all' | 'desired' | 'category' | 'title',
-    sourceItem: MatchItem | null = item
-  ) => {
-    if (!sourceItem) return;
-
-    let query = supabase.from('items').select('*').neq('id', sourceItem.id).limit(8);
-
-    if (type === 'desired' && sourceItem.desired_swap) {
-      query = query.ilike('title', `%${sourceItem.desired_swap}%`);
-    }
-
-    if (type === 'category' && sourceItem.category) {
-      query = query.eq('category', sourceItem.category);
-    }
-
-    if (type === 'title') {
-      query = query.ilike('title', `%${sourceItem.title}%`);
-    }
-
-    const { data, error } = await query;
-    if (!error && data) {
-      setMatchingItems(data as MatchItem[]);
-    }
-  };
+    fetchItem();
+  }, [id, supabase]);
 
   // Fetch user's own items
   useEffect(() => {
     const fetchMyItems = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data, error } = await supabase
-        .from('items')
-        .select('id,title,image_paths')
-        .eq('user_id', user.id);
-
-      if (!error && data) setMyItems(data as MatchItem[]);
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) return;
+      const { data: items } = await supabase.from('items').select('id,title,image_paths').eq('user_id', data.user.id);
+      if (items) setMyItems(items);
     };
     fetchMyItems();
-  }, []);
+  }, [supabase]);
 
-  // Fetch messages
-  const fetchMessages = async () => {
-    if (!session?.user) return;
-    const { data } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('item_id', id)
-      .order('created_at', { ascending: true });
+  // Fetch existing messages between both users
+  const fetchMessages = async (otherUserId: string) => {
+    const { data } = await supabase.auth.getUser();
+    const currentUser = data.user;
+    if (!currentUser) return;
 
-    const visible = (data as Message[] || []).filter(
-      (m: Message) =>
-        m.from_user === session.user.id || m.to_user === session.user.id
-    );
-    setMessages(visible);
-    scrollToBottom();
+    const res = await fetch(`/api/messages?userA=${currentUser.id}&userB=${otherUserId}`);
+    const json = await res.json();
+    if (Array.isArray(json)) {
+      setMessages(json);
+      scrollToBottom();
+    }
   };
 
+  // Realtime subscription
   useEffect(() => {
-    if (id && session?.user) fetchMessages();
-  }, [id, session]);
-
-  // Fetch offers
-  const fetchOffers = async () => {
-    if (!id) return;
-    const { data, error } = await supabase
-      .from('swap_offers')
-      .select(
-        `
-        id,
-        from_user,
-        to_user,
-        message,
-        suggested_cash_topup,
-        created_at,
-        my_item:items!swap_offers_my_item_id_fkey (
-          id, title, image_paths
-        ),
-        target_item:items!swap_offers_target_item_id_fkey (
-          id, title, image_paths
-        ),
-        from_profile:profiles!swap_offers_from_user_fkey (
-          full_name, phone
-        )
-      `
-      )
-      .eq('target_item_id', id)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) setOffers(data as Offer[]);
-  };
-
-  useEffect(() => {
-    fetchOffers();
-  }, [id]);
-
-  // Realtime messages
-  useEffect(() => {
-    if (!session?.user) return;
+    if (!session?.user || !owner) return;
     const channel = supabase
-      .channel(`messages:${id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `item_id=eq.${id}`,
-        },
-        (payload: RealtimePostgresInsertPayload<Message>) => {
-          const newMsg = payload.new as Message;
-          if (
-            newMsg.from_user === session.user.id ||
-            newMsg.to_user === session.user.id
-          ) {
-            setMessages((prev) => [...prev, newMsg]);
-            scrollToBottom();
-          }
+      .channel('messages-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const newMsg = payload.new;
+        if (
+          (newMsg.from_user === session.user.id && newMsg.to_user === owner.id) ||
+          (newMsg.from_user === owner.id && newMsg.to_user === session.user.id)
+        ) {
+          setMessages((prev) => [...prev, newMsg]);
+          scrollToBottom();
         }
-      )
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [id, session]);
+  }, [session?.user, owner, supabase]);
 
-  // ✅ FIXED: Send message
+  // Auto-load existing messages
+  useEffect(() => {
+    if (owner && session?.user) fetchMessages(owner.id);
+  }, [owner, session]);
+
+  // Send message
   const handleSend = async () => {
-    if (!message.trim()) return;
-    if (!owner) return toast.error('Owner not found');
+    if (!message.trim()) return toast.error("Message is empty");
+    if (!session?.user?.id) return toast.error("No sender found");
+    if (!owner?.id) return toast.error("No recipient found");
+    if (!item?.id) return toast.error("No target item found");
+    if (!myItemId) return toast.error("Please select your item before sending a message");
+
+    const payload = {
+      from_user: session.user.id,
+      to_user: owner.id,
+      content: message,
+      item_a_id: myItemId,
+      item_b_id: item.id,
+    };
 
     try {
-      const { data: { session: activeSession } } = await supabase.auth.getSession();
-      if (!activeSession) return toast.error('Not logged in');
-
-      const data = await apiFetch('/api/messages', {
+      const res = await fetch('/api/messages', {
         method: 'POST',
-        body: JSON.stringify({
-          to_user: owner.id,    // 👈 using your schema
-          content: message,
-          item_id: id,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
 
-      setMessages((prev) => [...prev, data]);
-      setMessage('');
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  };
+      const json = await res.json();
 
-  // ✅ FIXED: Send offer
-  const handleSendOffer = async () => {
-    if (!session?.user) return toast.error('Please log in');
-    if (!offerMessage.trim()) return toast.error('Enter your offer message');
-    if (!myItemId) return toast.error('Select one of your items');
-
-    try {
-      const { data: { session: activeSession } } = await supabase.auth.getSession();
-      if (!activeSession) return toast.error('Not logged in');
-
-      const json = await apiFetch('/api/swap-offers', {
-        method: 'POST',
-        body: JSON.stringify({
-          targetItemId: id,
-          myItemId,
-          message: offerMessage,
-        }),
-      });
-
-      toast.success('Offer created ✅');
-      setOfferMessage('');
-      fetchOffers();
-
-      if (json.messageInserted) {
-        setMessages((prev) => [...prev, json.messageInserted]);
+      if (!res.ok) {
+        toast.error(json.error || 'Message failed');
+        return;
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to send offer');
+
+      setMessages((prev) => [...prev, json]);
+      setMessage('');
+      scrollToBottom();
+    } catch (err) {
+      console.error(err);
+      toast.error('Unexpected error while sending message');
     }
   };
 
-  // Loading state
   if (!item) {
     return (
-      <main className="p-6 max-w-5xl mx-auto min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Loading item details...</p>
+      <main className="p-6 text-center min-h-screen flex items-center justify-center">
+        <p>Loading item details...</p>
       </main>
     );
   }
 
+  const isOwner = authUser?.id === item?.user_id;
+
+  const slides = (item.image_paths || []).concat(item.video_paths || []);
+
   return (
-    // 🔥 Everything below unchanged
-    <main className="p-6 max-w-5xl mx-auto bg-gradient-to-b from-green-50 to-white min-h-screen">
-      <FloatingButton
-        onClick={() => chatRef.current?.scrollIntoView({ behavior: 'smooth' })}
-      />
+    <main className="p-6 max-w-4xl mx-auto bg-gradient-to-b from-green-50 to-white min-h-screen">
+      <FloatingButton onClick={scrollToBottom} />
 
-      <h1 className="text-3xl font-extrabold text-green-700 mb-6">
-        {item.title}
-      </h1>
+      <h1 className="text-3xl font-extrabold text-green-700 mb-4">{item.title}</h1>
 
-      {/* Swiper for item media */}
+      {/* Media Swiper with staggered fade-in */}
       {slides.length > 0 && (
         <Swiper
           modules={[Navigation, Pagination]}
           navigation
           pagination={{ clickable: true }}
-          spaceBetween={10}
           slidesPerView={1}
           className="w-full h-72 mb-6"
         >
-          {slides.map((slide, idx) => (
-            <SwiperSlide key={idx}>
-              {slide.type === 'image' ? (
-                <Image
-                  src={`${imageBucketUrl}${slide.path}`}
-                  alt={`slide-${idx}`}
-                  width={600}
-                  height={400}
-                  className="w-full h-72 object-cover cursor-pointer"
-                  unoptimized
-                  onClick={() => {
-                    setLightboxIndex(idx);
-                    setZoom(1);
-                    setLightboxOpen(true);
-                  }}
-                />
-              ) : (
-                <video
-                  src={`${videoBucketUrl}${slide.path}`}
-                  controls
-                  muted
-                  loop
-                  className="w-full h-72 object-cover cursor-pointer"
-                  onClick={() => {
-                    setLightboxIndex(idx);
-                    setZoom(1);
-                    setLightboxOpen(true);
-                  }}
-                />
-              )}
+          {slides.map((path, i) => (
+            <SwiperSlide key={i}>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.3, duration: 0.6 }}
+                className="w-full h-72 flex justify-center items-center"
+              >
+                {path.endsWith('.mp4') ? (
+                  <video
+                    src={`${videoBucketUrl}${path}`}
+                    controls
+                    preload="metadata"
+                    className="w-full h-72 object-cover rounded"
+                  />
+                ) : (
+                  <Image
+                    src={`${imageBucketUrl}${path}`}
+                    alt="item"
+                    width={800}
+                    height={600}
+                    loading="lazy"
+                    className="w-full h-72 object-cover rounded"
+                  />
+                )}
+              </motion.div>
             </SwiperSlide>
           ))}
         </Swiper>
       )}
 
-      {/* Item detail card */}
+      {/* Item Details */}
       <div className="bg-white shadow rounded p-4 mb-8">
         <h2 className="font-bold text-lg mb-3">📋 Item Details</h2>
-        <p className="mb-2"><span className="font-semibold">📦 Condition:</span> {item.condition || 'N/A'}</p>
-        <p className="mb-2"><span className="font-semibold">🎯 Desired Swap:</span> {item.desired_swap || 'Any good offer'}</p>
-        <p className="mb-2"><span className="font-semibold">⭐ Points:</span> {item.estimated_value || 0}</p>
-        <p className="text-green-700 font-bold mt-3">Total Value: ₦{((item.estimated_value || 0) + (item.cash_balance || 0)).toLocaleString()}</p>
+        <p><strong>Condition:</strong> {item.condition || 'N/A'}</p>
+        <p><strong>Desired Swap:</strong> {item.desired_swap || 'Any good offer'}</p>
+        <p><strong>Points:</strong> {item.estimated_value || 0}</p>
       </div>
 
-      {/* Owner Info */}
-      {session ? (
-        owner && (
-          <div className="bg-white shadow p-4 rounded mb-8">
-            <h2 className="font-bold text-lg">👤 Owner Info</h2>
-            <p><b>Name:</b> {owner.full_name}</p>
-            <p><b>Phone:</b> {owner.phone}</p>
-            <p><b>Address:</b> {owner.address}</p>
-          </div>
-        )
-      ) : (
-        <p className="text-red-500 mb-8">Please log in to view owner info.</p>
-      )}
-
-      {/* Matching Items Section */}
-      {matchingItems.length > 0 && (
-        <div className="bg-white shadow p-4 rounded mb-8">
-          <h2 className="font-bold text-lg mb-3">✨ Matching Items</h2>
-
-          <div className="flex gap-2 mb-4">
-            <button onClick={() => fetchMatching('all')} className="px-3 py-1 rounded bg-green-100">All</button>
-            <button onClick={() => fetchMatching('desired')} className="px-3 py-1 rounded bg-green-100">Desired Swap</button>
-            <button onClick={() => fetchMatching('category')} className="px-3 py-1 rounded bg-green-100">Category</button>
-            <button onClick={() => fetchMatching('title')} className="px-3 py-1 rounded bg-green-100">Item Name</button>
-          </div>
-
-          <Swiper
-            modules={[Navigation, Pagination]}
-            navigation
-            pagination={{ clickable: true }}
-            spaceBetween={15}
-            slidesPerView={2}
-            breakpoints={{
-              640: { slidesPerView: 2 },
-              768: { slidesPerView: 3 },
-              1024: { slidesPerView: 4 },
-            }}
-          >
-            {matchingItems.map((match) => {
-              const totalValue =
-                Number(match.estimated_value || 0) + Number(match.cash_balance || 0);
-
-              return (
-                <SwiperSlide key={match.id}>
-                  <div
-                    className="bg-gray-50 rounded-lg shadow p-3 cursor-pointer hover:shadow-lg transition"
-                    onClick={() => router.push(`/swap/${match.id}`)}
-                  >
-                    {match.image_paths?.[0] && (
-                      <img
-                        src={`${imageBucketUrl}${match.image_paths[0]}`}
-                        alt={match.title}
-                        className="w-full h-32 object-cover rounded"
-                      />
-                    )}
-                    <h4 className="text-sm font-semibold text-green-700 mt-2">
-                      {match.title}
-                    </h4>
-                    <p className="text-xs text-gray-600">
-                      ₦{totalValue.toLocaleString()}
-                    </p>
-                  </div>
-                </SwiperSlide>
-              );
-            })}
-          </Swiper>
+      {/* Owner info */}
+      {owner && (
+        <div className="bg-white shadow p-4 rounded mb-6">
+          <h2 className="font-bold text-lg mb-2">👤 Owner Info</h2>
+          <p><b>Name:</b> {owner.full_name}</p>
+          <p><b>Phone:</b> {owner.phone}</p>
+          <p><b>Address:</b> {owner.address}</p>
         </div>
       )}
 
-      {/* Offer Section */}
-      <div className="bg-white shadow p-4 rounded mb-8">
-        <h2 className="font-bold text-lg mb-3">🔄 Swap Offers</h2>
-        {session ? (
-          <>
-            {/* 🔥 My Item Selection Dropdown */}
-            <label className="block mb-2 font-medium">Choose one of your items:</label>
-            <select
-              value={myItemId}
-              onChange={(e) => setMyItemId(e.target.value)}
-              className="w-full border p-2 rounded mb-3"
-            >
-              <option value="">-- Select an item --</option>
-              {myItems.map((mi) => (
-                <option key={mi.id} value={mi.id}>{mi.title}</option>
-              ))}
-            </select>
-
-            <textarea
-              value={offerMessage}
-              onChange={(e) => setOfferMessage(e.target.value)}
-              placeholder="Write your offer message... (required)"
-              className="w-full border rounded p-2 mb-3"
-            />
-            <button
-              onClick={handleSendOffer}
-              className="bg-green-600 text-white px-4 py-2 rounded"
-            >
-              Send Offer
-            </button>
-
-            <div className="mt-6 space-y-4">
-              {offers.length === 0 && (
-                <p className="text-gray-500">No offers yet.</p>
-              )}
-              {offers.map((offer) => (
-                <div
-                  key={offer.id}
-                  className="border rounded p-3 shadow bg-gray-50"
-                >
-                  <div className="flex items-center gap-3">
-                    {offer.my_item?.image_paths?.[0] && (
-                      <Image
-                        src={`${imageBucketUrl}${offer.my_item.image_paths[0]}`}
-                        alt={offer.my_item.title}
-                        width={80}
-                        height={60}
-                        className="rounded object-cover"
-                        unoptimized
-                      />
-                    )}
-                    <span className="text-sm font-semibold text-gray-800">
-                      {offer.my_item?.title || 'Unknown'}
-                    </span>
-                    <span className="mx-2">→</span>
-                    {offer.target_item?.image_paths?.[0] && (
-                      <Image
-                        src={`${imageBucketUrl}${offer.target_item.image_paths[0]}`}
-                        alt={offer.target_item.title}
-                        width={80}
-                        height={60}
-                        className="rounded object-cover"
-                        unoptimized
-                      />
-                    )}
-                    <span className="text-sm font-semibold text-gray-800">
-                      {offer.target_item?.title || 'Unknown'}
-                    </span>
-                  </div>
-
-                  {offer.from_profile && (
-                    <p className="text-xs text-gray-600 mt-1">
-                      👤 From: {offer.from_profile.full_name} ({offer.from_profile.phone})
-                    </p>
-                  )}
-
-                  <p className="text-sm text-gray-700 mt-2">{offer.message}</p>
-                  {offer.suggested_cash_topup !== 0 && (
-                    <p className="text-xs text-green-700 mt-2 font-semibold">
-                      Fairness:{' '}
-                      {offer.suggested_cash_topup > 0
-                        ? `You may need to add ₦${offer.suggested_cash_topup.toLocaleString()}`
-                        : `Your item is worth ₦${Math.abs(
-                            offer.suggested_cash_topup
-                          ).toLocaleString()} more`}
-                    </p>
-                  )}
-                  {offer.suggested_cash_topup === 0 && (
-                    <p className="text-xs text-green-600 mt-2 font-semibold">
-                      ✅ This looks like a fair swap!
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-500 mt-1">
-                    Sent on {new Date(offer.created_at).toLocaleString()}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="text-red-500">Please log in to send offers.</p>
-        )}
+      {/* Select your item to link */}
+      <div className="bg-white shadow p-4 rounded mb-6">
+        <h2 className="font-bold mb-2">🔁 Select your item for swap</h2>
+        <p><strong className='text-red-600'>It is important to select item before you chat</strong></p>
+        <select
+          className="w-full border rounded p-2"
+          value={myItemId}
+          onChange={(e) => setMyItemId(e.target.value)}
+        >
+          <option value="">-- Choose your item --</option>
+          {myItems.map((mi) => (
+            <option key={mi.id} value={mi.id}>{mi.title}</option>
+          ))}
+        </select>
       </div>
 
-      {/* Chat Section */}
-      <div ref={chatRef} className="bg-white shadow p-4 rounded">
+      {/* Chat */}
+      <div className="bg-white shadow p-4 rounded">
         <h2 className="font-bold text-lg mb-3">💬 Chat</h2>
-        {session ? (
-          <>
-            <div className="h-64 overflow-y-auto border rounded p-3 mb-3 bg-gray-50">
-              {messages.length === 0 && (
-                <p className="text-gray-500">No messages yet.</p>
-              )}
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`mb-2 p-2 rounded max-w-[75%] ${
-                    m.from_user === session.user?.id
-                      ? 'bg-green-100 ml-auto text-right'
-                      : 'bg-gray-200 mr-auto'
-                  }`}
-                >
-                  <p className="text-sm">{m.content}</p>
-                  <p className="text-[10px] text-gray-500 mt-1">
-                    {new Date(m.created_at || '').toLocaleTimeString()}
-                  </p>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
+        <div className="h-64 overflow-y-auto border rounded p-3 mb-3 bg-gray-50">
+          {messages.map((m) => (
+            <div
+              key={m.id}
+              className={`mb-2 p-2 rounded max-w-[75%] ${
+                m.from_user === session?.user?.id ? 'bg-green-100 ml-auto text-right' : 'bg-gray-200 mr-auto'
+              }`}
+            >
+              <p className="text-sm">{m.content}</p>
+              <p className="text-[10px] text-gray-500 mt-1">{new Date(m.created_at || '').toLocaleTimeString()}</p>
             </div>
-            <div className="flex gap-2">
-              <input
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Type a message..."
-                className="flex-1 border rounded p-2"
-              />
-              <button
-                onClick={handleSend}
-                className="bg-green-600 text-white px-4 py-2 rounded"
-              >
-                Send
-              </button>
-            </div>
-          </>
-        ) : (
-          <p className="text-red-500">Please log in to chat.</p>
-        )}
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder={isOwner ? "You cannot chat on your own item" : "Type a message..."}
+            className="flex-1 border rounded p-2"
+            disabled={isOwner}
+            onKeyDown={(e) => {
+              if (!isOwner && e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+          />
+          <button
+            onClick={handleSend}
+            disabled={isOwner}
+            className={`px-4 py-2 rounded ${isOwner ? 'bg-gray-400' : 'bg-green-600 text-white'}`}
+          >
+            Send
+          </button>
+        </div>
       </div>
     </main>
   );
