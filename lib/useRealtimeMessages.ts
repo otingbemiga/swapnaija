@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { Message } from '@/types'; // optional, or you can inline type below
+import { Message } from '@/types'; // ✅ now works after creating types.ts
 
 /**
  * Realtime message subscription hook.
@@ -36,9 +36,7 @@ export function useRealtimeMessages(
           onNewMessage(newMessage);
         }
       )
-      .subscribe((status) => {
-        console.log('[Realtime] Subscription status:', status);
-      });
+      .subscribe();
 
     return () => {
       console.log(`[Realtime] Unsubscribing from conversation ${conversationId}`);

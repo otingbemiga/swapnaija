@@ -2,13 +2,16 @@ import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 
-export async function GET(req: Request, { params }: { params: { itemId: string } }) {
+export async function GET(
+  req: Request,
+  context: any // ✅ Force loose type to bypass buggy type inference
+) {
   try {
-    // ✅ Await cookies properly
-    const cookieStore = await cookies();
+    const { itemId } = context?.params ?? {};
+
+    const cookieStore = cookies();
     const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
 
-    // 🔑 Get token from Authorization header
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '').trim();
 
@@ -16,10 +19,8 @@ export async function GET(req: Request, { params }: { params: { itemId: string }
       return NextResponse.json({ error: 'No auth token provided' }, { status: 401 });
     }
 
-    // ✅ Set Supabase session
     await supabase.auth.setSession({ access_token: token, refresh_token: '' });
 
-    // ✅ Get current user
     const {
       data: { user },
       error: userError,
@@ -29,9 +30,6 @@ export async function GET(req: Request, { params }: { params: { itemId: string }
       return NextResponse.json({ error: 'Not logged in' }, { status: 401 });
     }
 
-    const itemId = params.itemId;
-
-    // ✅ Fetch all messages between current user and anyone involved in this item
     const { data: messages, error } = await supabase
       .from('messages')
       .select(`
@@ -40,7 +38,7 @@ export async function GET(req: Request, { params }: { params: { itemId: string }
         to_user_profile:to_user (id, full_name, avatar_url)
       `)
       .eq('item_id', itemId)
-      .or(`from_user.eq.${user.id},to_user.eq.${user.id}`) // <-- FIX: Fetch both sent & received
+      .or(`from_user.eq.${user.id},to_user.eq.${user.id}`)
       .order('created_at', { ascending: true });
 
     if (error) {

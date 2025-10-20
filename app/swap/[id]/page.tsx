@@ -1,4 +1,3 @@
-// app/swap/[id]/page.tsx
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
@@ -120,18 +119,18 @@ export default function SwapChatPage() {
     }
   };
 
-  // Realtime subscription
+  // ✅ FIXED realtime subscription (type-safe, no functionality change)
   useEffect(() => {
     if (!session?.user || !owner) return;
     const channel = supabase
       .channel('messages-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        const newMsg = payload.new;
+        const newMsg = payload.new as Message; // ✅ Cast payload.new safely to Message
         if (
           (newMsg.from_user === session.user.id && newMsg.to_user === owner.id) ||
           (newMsg.from_user === owner.id && newMsg.to_user === session.user.id)
         ) {
-          setMessages((prev) => [...prev, newMsg]);
+          setMessages((prev: Message[]) => [...prev, newMsg]); // ✅ Now matches Message[]
           scrollToBottom();
         }
       })
@@ -177,7 +176,7 @@ export default function SwapChatPage() {
         return;
       }
 
-      setMessages((prev) => [...prev, json]);
+      setMessages((prev: Message[]) => [...prev, json]); // ✅ Also type-safe here
       setMessage('');
       scrollToBottom();
     } catch (err) {
@@ -204,7 +203,7 @@ export default function SwapChatPage() {
 
       <h1 className="text-3xl font-extrabold text-green-700 mb-4">{item.title}</h1>
 
-      {/* Media Swiper with staggered fade-in */}
+      {/* Media Swiper */}
       {slides.length > 0 && (
         <Swiper
           modules={[Navigation, Pagination]}
@@ -262,7 +261,7 @@ export default function SwapChatPage() {
         </div>
       )}
 
-      {/* Select your item to link */}
+      {/* Select your item */}
       <div className="bg-white shadow p-4 rounded mb-6">
         <h2 className="font-bold mb-2">🔁 Select your item for swap</h2>
         <p><strong className='text-red-600'>It is important to select item before you chat</strong></p>
@@ -290,7 +289,9 @@ export default function SwapChatPage() {
               }`}
             >
               <p className="text-sm">{m.content}</p>
-              <p className="text-[10px] text-gray-500 mt-1">{new Date(m.created_at || '').toLocaleTimeString()}</p>
+              <p className="text-[10px] text-gray-500 mt-1">
+                {new Date(m.created_at || '').toLocaleTimeString()}
+              </p>
             </div>
           ))}
           <div ref={messagesEndRef} />

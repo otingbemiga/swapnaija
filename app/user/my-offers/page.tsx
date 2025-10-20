@@ -54,30 +54,37 @@ export default function MyOffersPage() {
     if (session?.user) fetchOffers();
   }, [session]);
 
-  // Real-time updates
-  useEffect(() => {
-    if (!session?.user) return;
+useEffect(() => {
+  if (!session?.user) return;
 
-    const channel = supabase
-      .channel(`realtime:offers_${session.user.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages' },
-        (payload: RealtimePostgresInsertPayload<Message>) => {
-          if (
-            payload.new.from_user === session.user.id ||
-            payload.new.to_user === session.user.id
-          ) {
-            fetchOffers();
-          }
+  const channel = supabase
+    .channel(`realtime:offers_${session.user.id}`)
+    .on(
+      'postgres_changes' as any, // ✅ Fix overload error
+      {
+        event: '*',
+        schema: 'public',
+        table: 'messages'
+      },
+      (payload: RealtimePostgresInsertPayload<Message>) => {
+        if (
+          payload.new.from_user === session.user.id ||
+          payload.new.to_user === session.user.id
+        ) {
+          fetchOffers();
         }
-      )
-      .subscribe();
+      }
+    )
+    .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [session]);
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [session]);
+
+
+
+
 
   if (!session?.user) {
     return (

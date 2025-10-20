@@ -1,7 +1,19 @@
-// ✅ app/api/swap-offers/[id]/accept/route.ts
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
+
+// ✅ Define TypeScript interface to guide Supabase's inferred response
+interface Offer {
+  id: string;
+  status: string;
+  target_item_id: string;
+  my_item_id: string;
+  initiator_id: string;
+  target_item:
+    | { user_id: string }[]
+    | { user_id: string }
+    | null;
+}
 
 export async function POST(
   req: Request,
@@ -18,7 +30,7 @@ export async function POST(
 
   const offerId = params.id;
 
-  const { data: offer, error } = await supabase
+  const { data: offerData, error } = await supabase
     .from('swap_offers')
     .select(
       `
@@ -31,13 +43,20 @@ export async function POST(
     `
     )
     .eq('id', offerId)
-    .single();
+    .single<Offer>(); // ✅ Explicitly type it here
 
-  if (error || !offer) {
+  if (error || !offerData) {
     return NextResponse.json({ error: 'Offer not found' }, { status: 404 });
   }
 
-  if (offer.target_item.user_id !== user.id) {
+  const offer = offerData as Offer;
+
+  // ✅ Safely extract the user_id whether it's an array or object
+  const targetItemUserId = Array.isArray(offer.target_item)
+    ? offer.target_item[0]?.user_id
+    : offer.target_item?.user_id;
+
+  if (targetItemUserId !== user.id) {
     return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
   }
 
@@ -45,7 +64,7 @@ export async function POST(
     return NextResponse.json({ error: 'Offer already handled' }, { status: 400 });
   }
 
-  // Accept the offer
+  // ✅ Accept the offer
   const { error: updateError } = await supabase
     .from('swap_offers')
     .update({ status: 'accepted' })
@@ -55,7 +74,7 @@ export async function POST(
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  // Mark both items as swapped
+  // ✅ Mark both items as swapped
   const { error: itemError } = await supabase
     .from('items')
     .update({ status: 'swapped' })
@@ -65,7 +84,7 @@ export async function POST(
     return NextResponse.json({ error: itemError.message }, { status: 500 });
   }
 
-  // Reject other pending offers
+  // ✅ Reject all other pending offers involving either item
   await supabase
     .from('swap_offers')
     .update({ status: 'rejected' })
@@ -80,7 +99,7 @@ export async function POST(
     .neq('id', offerId)
     .eq('status', 'pending');
 
-  // Notification
+  // ✅ Notify initiator
   const { error: notifError } = await supabase.from('notifications').insert([
     {
       user_id: offer.initiator_id,

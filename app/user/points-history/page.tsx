@@ -20,7 +20,6 @@ export default function PointsHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState<number>(0);
 
-  // Fetch user’s current points balance
   const fetchBalance = async () => {
     if (!session?.user?.id) return;
     const { data, error } = await supabase
@@ -34,7 +33,6 @@ export default function PointsHistoryPage() {
     }
   };
 
-  // Fetch user’s points history
   const fetchHistory = async () => {
     if (!session?.user?.id) return;
     setLoading(true);
@@ -51,51 +49,40 @@ export default function PointsHistoryPage() {
     setLoading(false);
   };
 
-  // Initial load
   useEffect(() => {
     if (!session?.user?.id) return;
     fetchBalance();
     fetchHistory();
   }, [session]);
 
-  // Real-time subscription for new points history entries
-  useEffect(() => {
-    if (!session?.user?.id) return;
+ useEffect(() => {
+  if (!session?.user?.id) return;
 
-    type RealtimePayload = {
-      eventType: 'INSERT' | 'UPDATE' | 'DELETE';
-      new: PointsHistoryEntry;
-      old?: PointsHistoryEntry;
-    };
-
-    const channel = supabase
-      .channel(`points_history_${session.user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'points_history',
-          filter: `user_id=eq.${session.user.id}`,
-        },
-        (payload: RealtimePayload) => {
-          if (payload.eventType === 'INSERT') {
-            // Insert new row at top
-            setHistory((prev) => [payload.new, ...prev]);
-            toast.success(
-              `🎉 You earned ${payload.new.points} points (${payload.new.reason})`
-            );
-          }
-          // Re-fetch balance to keep it in sync
-          fetchBalance();
+  const channel = supabase
+    .channel(`points_history_${session.user.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'points_history',
+        filter: `user_id=eq.${session.user.id}`,
+      },
+      (payload: any) => {
+        if (payload.eventType === 'INSERT') {
+          setHistory((prev) => [payload.new, ...prev]);
+          toast.success(`🎉 You earned ${payload.new.points} points (${payload.new.reason})`);
         }
-      )
-      .subscribe();
+        fetchBalance();
+      }
+    )
+    .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [session]);
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [session]);
+
 
   if (!session) {
     return <div className="p-6">Please log in to view your points history.</div>;
@@ -112,7 +99,6 @@ export default function PointsHistoryPage() {
         Points History 📊
       </motion.h1>
 
-      {/* Balance Summary */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -139,10 +125,7 @@ export default function PointsHistoryPage() {
             </thead>
             <tbody>
               {history.map((entry) => (
-                <tr
-                  key={entry.id}
-                  className="border-t hover:bg-gray-50 transition"
-                >
+                <tr key={entry.id} className="border-t hover:bg-gray-50 transition">
                   <td className="py-2 px-4 text-sm text-gray-700">
                     {new Date(entry.created_at).toLocaleString()}
                   </td>
@@ -153,9 +136,7 @@ export default function PointsHistoryPage() {
                   >
                     {entry.points > 0 ? `+${entry.points}` : entry.points}
                   </td>
-                  <td className="py-2 px-4 text-sm text-gray-600">
-                    {entry.reason}
-                  </td>
+                  <td className="py-2 px-4 text-sm text-gray-600">{entry.reason}</td>
                 </tr>
               ))}
             </tbody>

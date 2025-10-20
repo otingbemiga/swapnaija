@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 
 // ✅ Define a safe payload type
 type RealtimePayload<T = any> = {
@@ -111,31 +112,29 @@ export default function CategoryPage() {
     }
   };
 
-  // ✅ Listen for realtime updates on points
-  useEffect(() => {
-    fetchUserPoints();
+  // ✅ FIXED: Listen for realtime updates on points (correct .on() syntax)
+ // ✅ Listen for realtime updates on points (Supabase v2+ syntax)
+useEffect(() => {
+  fetchUserPoints();
 
-    const subscription = supabase
-      .channel('points-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'profiles',
-        },
-        (payload: RealtimePayload<{ points: number }>) => {
-          if (payload.new && payload.new.points !== undefined) {
-            setUserPoints(payload.new.points);
-          }
+  // create the channel
+  const channel = supabase
+    .channel('points-updates')
+    .on(
+      'postgres_changes' as const, // explicit type
+      { event: 'UPDATE', schema: 'public', table: 'profiles' },
+      (payload: any) => {
+        if (payload.new && payload.new.points !== undefined) {
+          setUserPoints(payload.new.points);
         }
-      )
-      .subscribe();
+      }
+    )
+    .subscribe();
 
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, []);
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
 
   // ✅ Fetch items
   const fetchItems = async () => {
@@ -357,23 +356,30 @@ export default function CategoryPage() {
                     {slides.map((slide, idx) => (
                       <SwiperSlide key={idx}>
                         {slide.type === 'image' ? (
-                          <img
+                          <motion.img
                             src={slide.url}
                             alt={item.title}
                             className="w-full h-48 object-cover"
+                            initial={{ opacity: 0, scale: 0.97 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.6 }}
                           />
                         ) : (
-                          <video
+                          <motion.video
                             src={slide.url}
                             className="w-full h-48 object-cover"
                             controls
                             muted
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.6 }}
                           />
                         )}
                       </SwiperSlide>
                     ))}
                   </Swiper>
                 )}
+
 
                 <div className="p-4 flex flex-col flex-grow">
                   <h2 className="text-lg font-semibold text-gray-800">
