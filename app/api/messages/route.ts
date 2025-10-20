@@ -1,4 +1,5 @@
 // app/api/messages/route.ts
+export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 

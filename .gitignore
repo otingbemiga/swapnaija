@@ -24,12 +24,13 @@ coverage/
 
 # ------------------------------
 # Environment / Secrets
+# IMPORTANT: Never push ANY .env files
 # ------------------------------
-.env            # Main env
-.env.*          # Any other env files (local, production, etc.)
-*.pem           # Certificates
-*.key           # Private keys
-*.crt           # SSL certificates
+.env
+.env.*
+*.pem
+*.key
+*.crt
 
 # ------------------------------
 # Logs
@@ -41,27 +42,33 @@ pnpm-debug.log*
 *.log
 
 # ------------------------------
-# Misc
+# Misc system files
 # ------------------------------
 .DS_Store
 Thumbs.db
 
 # ------------------------------
-# Vercel / Deployment
+# Vercel
 # ------------------------------
 .vercel/
 
 # ------------------------------
-# TypeScript
+# TypeScript cache
 # ------------------------------
 *.tsbuildinfo
-next-env.d.ts
+
+# (KEEP THIS) next-env.d.ts SHOULD NOT BE IGNORED
+# next-env.d.ts
 
 # ------------------------------
-# OS / Editor junk
+# Editor Junk
 # ------------------------------
 *.swp
 *.swo
 .idea/
 .vscode/
-.env.production
+
+# ------------------------------
+# Optional: If you created this for local-only
+# ------------------------------
+env.production

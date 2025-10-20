@@ -1,35 +1,36 @@
 // middleware.ts
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
 
-  // ✅ Create middleware Supabase client that syncs session cookies
-  const supabase = createMiddlewareClient({ req, res })
+  // ✅ Must pass request + response cookies to avoid Vercel build errors
+  const supabase = createMiddlewareClient({
+    req,
+    res,
+  })
 
-  // ✅ Refresh session if needed (this keeps cookies valid)
+  // ✅ Sync & refresh session
   const {
     data: { session },
     error,
   } = await supabase.auth.getSession()
 
-  if (error) {
-    console.error('Middleware auth error:', error.message)
-  }
+  if (error) console.error('Middleware auth error:', error.message)
 
-  // ✅ Optional: protect specific routes (adjust as needed)
+  // ✅ Protect user routes (optional)
   if (!session && req.nextUrl.pathname.startsWith('/user-only-route')) {
-    const redirectUrl = req.nextUrl.clone()
-    redirectUrl.pathname = '/auth/login'
-    return NextResponse.redirect(redirectUrl)
+    return NextResponse.redirect(new URL('/auth/login', req.url))
   }
 
   return res
 }
 
-// ✅ Run middleware on all routes except static assets
+// ✅ Exclude static files & API routes (required for Vercel)
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.svg$|api).*)',
+  ],
 }

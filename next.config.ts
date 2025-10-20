@@ -1,18 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    // ✅ Updated from deprecated "domains" to new "remotePatterns"
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'rzjfumrvmmdluunqsqsp.supabase.co',
-        pathname: '/storage/v1/object/public/**', // allow all public Supabase storage assets
+        pathname: '/storage/v1/object/public/**',
       },
     ],
   },
 
   experimental: {
-    serverActions: {}, // ✅ must remain an empty object, not boolean
+    serverActions: {}, // keep enabled for latest Next.js
   },
 };
 
