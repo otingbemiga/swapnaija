@@ -109,19 +109,21 @@ export default function UserDashboard() {
             label: 'My Listings',
             value: stats.myItems,
             href: '/user/my-listings'
-          }, {
-            label: 'Offers Sent',
-            value: stats.offersSent,
-            href: '/user/my-offers'
-          }, {
-            label: 'Offers Received',
-            value: stats.offersReceived,
-            href: '/user/received-offers'
-          }, {
-            label: 'Completed Swaps',
-            value: stats.completedSwaps,
-            href: '/user/transactions'
-          }, {
+          }, 
+          // {
+          //   label: 'Offers Sent',
+          //   value: stats.offersSent,
+          //   href: '/user/my-offers'
+          // }, {
+          //   label: 'Offers Received',
+          //   value: stats.offersReceived,
+          //   href: '/user/received-offers'
+          // }, {
+          //   label: 'Completed Swaps',
+          //   value: stats.completedSwaps,
+          //   href: '/user/transactions'
+          // }, 
+          {
             label: 'Points Balance',
             value: stats.points,
             href: '/user/points-history'

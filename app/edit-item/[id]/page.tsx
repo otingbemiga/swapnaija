@@ -143,109 +143,105 @@ export default function EditItemPage() {
   };
 
   // ✅ Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    if (!session?.user?.id) {
-      toast.error('You must be logged in to edit an item.');
+  if (!session?.user?.id) {
+    toast.error('You must be logged in to edit an item.');
+    return;
+  }
+
+  try {
+    // ✅ BASIC ITEM UPDATE (Always safe)
+    const { error: updateError } = await supabase
+      .from('items')
+      .update({
+        title,
+        description,
+        category,
+        condition,
+        state,
+        lga,
+        address,
+        phone,
+        points,
+        estimated_value: estimatedValue,
+        desired_swap: desiredSwap,
+        status: 'pending', // Re-approval required
+      })
+      .eq('id', itemId)
+      .eq('user_id', session.user.id);
+
+    if (updateError) {
+      console.error('Update Error:', updateError);
+      toast.error('Failed to update item.');
       return;
     }
 
-    if (
-      !title.trim() ||
-      !description.trim() ||
-      !category.trim() ||
-      !condition.trim() ||
-      !state.trim() ||
-      !lga.trim() ||
-      !phone.trim() ||
-      !address.trim()
-    ) {
-      toast.error('Please fill in all fields.');
-      return;
+    // ✅ Upload new IMAGES if any
+    const newFiles = files.filter((f) => f !== null) as File[];
+    let imagePaths: string[] = [];
+
+    if (newFiles.length > 0) {
+      const uploads = await Promise.all(
+        newFiles.map(async (file) => {
+          const path = `${Date.now()}-${file.name}`;
+          const { error } = await supabase.storage
+            .from('item-images')
+            .upload(path, file, { upsert: true });
+
+          if (error) throw error;
+          return path;
+        })
+      );
+      imagePaths = uploads;
     }
 
-    try {
-      // Update item basic info
-      const { data: updated, error: updateError } = await supabase
+    // ✅ Upload new VIDEO if provided
+    let videoPath: string | null = null;
+    if (video) {
+      const path = `${Date.now()}-${video.name}`;
+      const { error } = await supabase.storage
+        .from('item-videos')
+        .upload(path, video, { upsert: true });
+
+      if (error) throw error;
+      videoPath = path;
+    }
+
+    // ✅ PRESERVE OLD MEDIA IF NOT REPLACED
+    const finalImagePaths =
+      imagePaths.length > 0
+        ? imagePaths
+        : previewUrls.filter((u) => u !== null).map((url) =>
+            url!.split('/').pop()
+          );
+
+    const finalVideoPath =
+      videoPath ||
+      (videoPreview ? videoPreview.split('/').pop() : null);
+
+    // ✅ ONLY update media if something changed
+    if (imagePaths.length > 0 || videoPath) {
+      await supabase
         .from('items')
         .update({
-          title,
-          description,
-          category,
-          condition,
-          state,
-          lga,
-          address,
-          phone,
-          points,
-          estimated_value: estimatedValue,
-          desired_swap: desiredSwap,
-          status: 'pending', // reset status for admin approval
+          image_paths: finalImagePaths,
+          video_path: finalVideoPath,
         })
         .eq('id', itemId)
-        .select()
-        .single();
-
-      if (updateError || !updated) throw updateError;
-
-      // Upload images
-      const newFiles = files.filter((f) => f !== null) as File[];
-      let imagePaths: string[] = [];
-      if (newFiles.length > 0) {
-        const uploaded = await Promise.all(
-          newFiles.map(async (file) => {
-            const path = `images/${itemId}-${Date.now()}-${file.name}`;
-            const { error } = await supabase.storage
-              .from('item-images')
-              .upload(path, file, { upsert: true });
-            if (error) throw error;
-            return path;
-          })
-        );
-        imagePaths = uploaded;
-      }
-
-      // Upload video
-      let videoPath: string | null = null;
-      if (video) {
-        const path = `videos/${itemId}-${Date.now()}-${video.name}`;
-        const { error } = await supabase.storage
-          .from('item-videos')
-          .upload(path, video, { upsert: true });
-        if (error) throw error;
-        videoPath = path;
-      }
-
-      if (imagePaths.length > 0 || videoPath) {
-        await supabase
-          .from('items')
-          .update({
-            image_paths: imagePaths.length > 0 ? imagePaths : previewUrls,
-            video_path: videoPath || videoPreview,
-          })
-          .eq('id', itemId);
-      }
-
-      // ✅ Notify admin
-      await fetch('/api/notify-admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'item-updated',
-          message: `An item "${title}" was updated and needs review.`,
-          sender_id: session.user.id,
-          item_id: itemId,
-        }),
-      });
-
-      toast.success('Item updated successfully!');
-      router.push('/user/userdashboard');
-    } catch (err: any) {
-      toast.error('Failed to update item.');
-      console.error('Update item error:', err);
+        .eq('user_id', session.user.id);
     }
-  };
+
+    toast.success('✅ Item updated successfully!');
+    router.push('/user/userdashboard');
+
+  } catch (err) {
+    console.error('Update item error:', err);
+    toast.error('Failed to update item.');
+  }
+};
+
 
   if (loading) return <p className="p-6">Loading item...</p>;
 

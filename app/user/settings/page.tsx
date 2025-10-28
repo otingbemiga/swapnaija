@@ -1,25 +1,17 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import { useSession } from '@supabase/auth-helpers-react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 
-const AVATARS_BUCKET = 'avatars'; // ✅ ensure this bucket exists in Supabase
-
-function sanitizeFilename(name: string) {
-  return (
-    name
-      .toLowerCase()
-      .replace(/\s+/g, '-') // spaces → dash
-      .replace(/[^a-z0-9.\-_]/g, '') || 'file'
-  );
-}
+const AVATARS_BUCKET = 'avatars';
 
 export default function UserSettingsPage() {
-  const session = useSession();
-  const router = useRouter(); // ✅ for redirection
+  const supabase = createClientComponentClient();
+  const router = useRouter();
+
+  const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const [fullName, setFullName] = useState('');
@@ -32,9 +24,18 @@ export default function UserSettingsPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // ✅ Fetch profile on mount
   useEffect(() => {
-    if (!session?.user) return;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      setSession(data.session);
+    })();
+  }, [supabase]);
+
+  useEffect(() => {
+    if (!session?.user) {
+      setLoading(false);
+      return;
+    }
 
     const fetchProfile = async () => {
       setLoading(true);
@@ -45,7 +46,6 @@ export default function UserSettingsPage() {
         .single();
 
       if (error) {
-        console.error(error.message);
         toast.error('Failed to load profile');
       } else if (data) {
         setFullName(data.full_name || '');
@@ -59,93 +59,66 @@ export default function UserSettingsPage() {
     };
 
     fetchProfile();
-  }, [session]);
+  }, [session, supabase]);
 
-  // ✅ Upload avatar to avatars/{userId}/passport.ext
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      if (!session?.user) {
-        toast.error('Please log in');
-        return;
-      }
-      if (!e.target.files?.length) return;
+    if (!session?.user) return toast.error('Please log in');
+    if (!e.target.files?.length) return;
 
-      setUploading(true);
-      const file = e.target.files[0];
+    setUploading(true);
+    const file = e.target.files[0];
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const filePath = `${session.user.id}/passport.${ext}`;
 
-      const ext = (file.name.split('.').pop() || 'png').toLowerCase();
-      const filePath = `${session.user.id}/passport.${ext}`; // stable path per user
+    const { error: uploadError } = await supabase.storage
+      .from(AVATARS_BUCKET)
+      .upload(filePath, file, { upsert: true });
 
-      const { error: uploadError } = await supabase.storage
-        .from(AVATARS_BUCKET)
-        .upload(filePath, file, {
-          upsert: true,
-          contentType: file.type || 'image/png',
-        });
-
-      if (uploadError) {
-        console.error(uploadError);
-        toast.error('Upload failed (check that the avatars bucket exists)');
-        return;
-      }
-
-      // ✅ public URL (if bucket is public); otherwise use signed URL in UI
-      const { data: urlData } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(filePath);
-      const publicUrl = urlData.publicUrl;
-
-      // Update profile row
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ avatar_url: publicUrl })
-        .eq('id', session.user.id);
-
-      if (profileError) {
-        console.error(profileError);
-        toast.error('Avatar saved to storage, but profile update failed');
-        return;
-      }
-
-      // Sync auth metadata (optional)
-      const { error: authError } = await supabase.auth.updateUser({
-        data: { avatar_url: publicUrl },
-      });
-      if (authError) console.warn('Auth metadata update failed:', authError.message);
-
-      setAvatarUrl(publicUrl);
-      toast.success('Passport uploaded ✅');
-    } catch (err: any) {
-      console.error(err.message || err);
+    if (uploadError) {
       toast.error('Upload failed');
-    } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  // ✅ Save profile + redirect
-  const handleSave = async () => {
-    if (!session?.user) {
-      toast.error('Please log in');
       return;
     }
+
+    const { data: urlData } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(filePath);
+    const publicUrl = urlData.publicUrl;
+
+    await supabase.from('profiles')
+      .update({ avatar_url: publicUrl })
+      .eq('id', session.user.id);
+
+    await supabase.auth.updateUser({
+      data: { avatar_url: publicUrl },
+    });
+
+    setAvatarUrl(publicUrl);
+    setUploading(false);
+    toast.success('Passport updated ✅');
+  };
+
+  const handleSave = async () => {
+    if (!session?.user) return toast.error('You must be logged in');
 
     setLoading(true);
 
-    // Update profiles
     const { error: profileError } = await supabase
       .from('profiles')
-      .update({ full_name: fullName, phone, address, state, lga })
+      .update({
+        full_name: fullName,
+        phone,
+        address,
+        state,
+        lga,
+        avatar_url: avatarUrl || undefined
+      })
       .eq('id', session.user.id);
 
     if (profileError) {
-      console.error(profileError.message);
-      toast.error('Failed to update profile');
       setLoading(false);
-      return;
+      return toast.error('Failed to update profile');
     }
 
-    // Update auth metadata
-    const { error: authError } = await supabase.auth.updateUser({
+    await supabase.auth.updateUser({
       data: {
         full_name: fullName,
         phone,
@@ -157,19 +130,13 @@ export default function UserSettingsPage() {
     });
 
     setLoading(false);
-
-    if (authError) {
-      console.error(authError.message);
-      toast.error('Failed to update auth metadata');
-    } else {
-      toast.success('Profile updated ✅');
-      router.push('/admin/userdashboard'); // ✅ redirect after save
-    }
+    toast.success('Profile updated ✅');
+    router.push('/user/userdashboard');
   };
 
   if (!session) {
     return (
-      <p className="text-center p-6 text-red-600">
+      <p className='text-center text-red-600 p-6'>
         Please log in to update your settings.
       </p>
     );
@@ -186,7 +153,6 @@ export default function UserSettingsPage() {
           <p className="text-center text-gray-500">Loading...</p>
         ) : (
           <>
-            {/* Avatar */}
             <div className="mb-6 text-center">
               {avatarUrl ? (
                 <img
@@ -195,84 +161,49 @@ export default function UserSettingsPage() {
                   className="w-28 h-28 rounded-full object-cover mx-auto border"
                 />
               ) : (
-                <div className="w-28 h-28 rounded-full bg-gray-200 flex items-center justify-center mx-auto border">
-                  <span className="text-gray-500 text-sm">No Image</span>
+                <div className="w-28 h-28 rounded-full bg-gray-200 mx-auto border flex items-center justify-center">
+                  <span className="text-gray-600 text-xs">No Image</span>
                 </div>
               )}
-              <div className="mt-3 flex items-center justify-center gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarUpload}
-                  disabled={uploading}
-                  className="text-sm"
-                />
-                {uploading && (
-                  <p className="text-xs text-gray-500">Uploading...</p>
-                )}
-              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                disabled={uploading}
+                onChange={handleAvatarUpload}
+                className="mt-3 text-sm"
+              />
             </div>
 
-            {/* Full name */}
             <label className="block mb-3">
-              <span className="text-gray-700">Full Name</span>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="mt-1 p-2 border rounded w-full"
-              />
+              Full Name
+              <input className="border p-2 w-full rounded" value={fullName} onChange={e => setFullName(e.target.value)} />
             </label>
 
-            {/* Phone */}
             <label className="block mb-3">
-              <span className="text-gray-700">Phone</span>
-              <input
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="mt-1 p-2 border rounded w-full"
-              />
+              Phone
+              <input className="border p-2 w-full rounded" value={phone} onChange={e => setPhone(e.target.value)} />
             </label>
 
-            {/* Address */}
             <label className="block mb-3">
-              <span className="text-gray-700">Address</span>
-              <input
-                type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                className="mt-1 p-2 border rounded w-full"
-              />
+              Address
+              <input className="border p-2 w-full rounded" value={address} onChange={e => setAddress(e.target.value)} />
             </label>
 
-            {/* State */}
             <label className="block mb-3">
-              <span className="text-gray-700">State</span>
-              <input
-                type="text"
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-                className="mt-1 p-2 border rounded w-full"
-              />
+              State
+              <input className="border p-2 w-full rounded" value={state} onChange={e => setState(e.target.value)} />
             </label>
 
-            {/* LGA */}
             <label className="block mb-3">
-              <span className="text-gray-700">LGA</span>
-              <input
-                type="text"
-                value={lga}
-                onChange={(e) => setLga(e.target.value)}
-                className="mt-1 p-2 border rounded w-full"
-              />
+              LGA
+              <input className="border p-2 w-full rounded" value={lga} onChange={e => setLga(e.target.value)} />
             </label>
 
             <button
               onClick={handleSave}
               disabled={loading}
-              className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded transition"
+              className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700"
             >
               {loading ? 'Saving...' : 'Save Changes'}
             </button>

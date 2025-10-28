@@ -4,15 +4,12 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import Head from 'next/head';
-import { supabase } from '@/lib/supabaseClient';
-import { useSession } from '@supabase/auth-helpers-react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import toast from 'react-hot-toast';
 
-// ✅ Swiper imports
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination } from 'swiper/modules';
 
-// ✅ Proper typing for naija-state-local-government
 const statesLgas: {
   states: () => string[];
   lgas: (state: string) => { lgas: string[] };
@@ -20,10 +17,26 @@ const statesLgas: {
 
 export default function AddItemPage() {
   const router = useRouter();
-  const session = useSession();
+  const supabase = createClientComponentClient();
 
-  const [agreementAccepted, setAgreementAccepted] = useState(false); // ✅ new state
+  const [session, setSession] = useState<any>(null);
+  const [loadingSession, setLoadingSession] = useState(true); // ✅ new
 
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      setSession(data.session);
+      setLoadingSession(false); // ✅ session check completed
+    })();
+  }, [supabase]);
+
+  useEffect(() => {
+    if (!loadingSession && !session) {
+      router.push('/auth/login');
+    }
+  }, [loadingSession, session, router]);
+
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [desiredSwap, setDesiredSwap] = useState('');
@@ -41,12 +54,6 @@ export default function AddItemPage() {
   const [estimatedValue, setEstimatedValue] = useState<string>('');
   const [cashBalance, setCashBalance] = useState<string>('');
 
-  // Redirect if not logged in
-  useEffect(() => {
-    if (!session) router.push('/auth/login');
-  }, [session, router]);
-
-  // Load LGAs when state changes
   useEffect(() => {
     if (state) {
       const selectedLgas = statesLgas.lgas(state)?.lgas || [];
@@ -56,7 +63,6 @@ export default function AddItemPage() {
     }
   }, [state]);
 
-  // Handle single image + preview
   const handleSingleImageUpload = (index: number, file: File | null) => {
     const newImages = [...images];
     const newPreviews = [...previewUrls];
@@ -69,8 +75,7 @@ export default function AddItemPage() {
   const handleVideoUpload = (file: File | null) => {
     if (!file) return;
     if (file.size > 60 * 1024 * 1024) {
-      toast.error('Video must be less than 60MB (≈60s).');
-      return;
+      return toast.error('Video must be less than 60MB');
     }
     setVideo(file);
     setVideoPreview(URL.createObjectURL(file));
@@ -79,10 +84,13 @@ export default function AddItemPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!agreementAccepted) {
-      toast.error('⚠️ You must accept the User Agreement before adding an item.');
-      return;
-    }
+    const { data } = await supabase.auth.getUser();
+    const user = data.user;
+
+    if (!user) return toast.error('Please login again.');
+
+    if (!agreementAccepted)
+      return toast.error('⚠️ You must agree to the terms.');
 
     if (
       !title ||
@@ -97,13 +105,10 @@ export default function AddItemPage() {
       !address ||
       !condition ||
       !estimatedValue
-    ) {
-      toast.error('All fields are required! (4 images + 1 video + estimated value)');
-      return;
-    }
+    )
+      return toast.error('All fields are required!');
 
     try {
-      // 1️⃣ Insert item FIRST with empty media → get ID
       const { data: insertedItem, error } = await supabase
         .from('items')
         .insert({
@@ -118,21 +123,19 @@ export default function AddItemPage() {
           address,
           estimated_value: Number(estimatedValue),
           cash_balance: cashBalance ? Number(cashBalance) : 0,
+          user_id: user.id,
+          status: 'pending',
           image_paths: [],
           video_path: null,
-          status: 'pending', // ✅ goes for review
-          user_id: session?.user?.id,
-          points: 0,
         })
         .select()
         .single();
 
       if (error) throw error;
 
-      toast.success('Item submitted for review! Redirecting…');
+      toast.success('Item submitted for review ✅');
       router.push(`/add-item/${insertedItem.id}`);
 
-      // 2️⃣ Background uploads (images + video)
       (async () => {
         try {
           const uploadedImages: string[] = [];
@@ -140,20 +143,14 @@ export default function AddItemPage() {
           for (const image of images) {
             if (!image) continue;
             const filePath = `public/images/${insertedItem.id}-${Date.now()}-${image.name}`;
-            const { error: imgError } = await supabase.storage
-              .from('item-images')
-              .upload(filePath, image, { contentType: image.type });
-            if (imgError) throw imgError;
+            await supabase.storage.from('item-images').upload(filePath, image);
             uploadedImages.push(filePath.replace('public/', ''));
           }
 
           let uploadedVideo: string | null = null;
           if (video) {
             const videoPath = `public/videos/${insertedItem.id}-${Date.now()}-${video.name}`;
-            const { error: vidError } = await supabase.storage
-              .from('item-videos')
-              .upload(videoPath, video, { contentType: video.type });
-            if (vidError) throw vidError;
+            await supabase.storage.from('item-videos').upload(videoPath, video);
             uploadedVideo = videoPath.replace('public/', '');
           }
 
@@ -161,68 +158,52 @@ export default function AddItemPage() {
             .from('items')
             .update({ image_paths: uploadedImages, video_path: uploadedVideo })
             .eq('id', insertedItem.id);
-        } catch (uploadErr: any) {
-          console.error('⚠️ Background upload failed:', uploadErr.message);
+
+        } catch (uploadErr) {
+          console.warn('⚠ Upload issue:', uploadErr);
         }
       })();
 
-      // 3️⃣ Log Activity
-      await supabase.from('activities').insert([
-        {
-          user_id: session?.user?.id,
-          action: 'ITEM_SUBMITTED',
-          item_id: insertedItem.id,
-        },
-      ]);
-
-      // 4️⃣ Notify admin (use API route)
-      await fetch('/api/notify-admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'ITEM_SUBMITTED',
-          message: `New item submitted: "${title}"`,
-          sender_id: session?.user?.id,
-          recipient_id: process.env.NEXT_PUBLIC_ADMIN_USER_ID, // ⚠️ set in .env
-          item_id: insertedItem.id,
-        }),
-      });
     } catch (err: any) {
-      console.warn('❌ Add item failed:', err.message);
+      console.warn(err.message);
       toast.error('Could not submit item.');
     }
   };
 
-  // ✅ Build previews
   const previewSlides = [
-    ...previewUrls
-      .filter((url): url is string => Boolean(url))
-      .map((url) => ({ type: 'image', url })),
+    ...previewUrls.filter(Boolean).map(url => ({ type: 'image', url: url! })),
     ...(videoPreview ? [{ type: 'video', url: videoPreview }] : []),
   ];
+
+  if (loadingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-white">
+        Checking login...
+      </div>
+    );
+  }
 
   return (
     <>
       <Head>
         <title>Add Item | SwapNaija</title>
       </Head>
+
       <main
-        className="min-h-screen bg-cover bg-center relative flex py-15 items-center justify-center px-4"
+        className="min-h-screen bg-cover bg-center relative flex py-15 justify-center px-4"
         style={{ backgroundImage: "url('/swap-bg.jpg')" }}
       >
         <div className="absolute inset-0 bg-green-900 bg-opacity-60 z-0" />
 
-        {/* ✅ User Agreement Modal */}
         {!agreementAccepted && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70">
+          <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center">
             <motion.div
-              className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full space-y-4"
-              initial={{ opacity: 0, y: -50 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
+              className="bg-white p-6 rounded shadow-xl max-w-lg w-full"
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
             >
               <h2 className="text-xl font-bold text-center text-red-700">
-                🚨 User Agreement (Strict Policy)
+                🚨 User Agreement
               </h2>
               <p className="text-gray-700 text-sm leading-relaxed">
                 By proceeding, you confirm that <strong>any item you list on SwapNaija is your
@@ -233,17 +214,11 @@ export default function AddItemPage() {
                 termination</strong>, possible <strong>legal action</strong>, and cooperation with
                 law enforcement agencies.  
               </p>
-              <div className="flex justify-between mt-4">
-                <button
-                  onClick={() => router.push('/')}
-                  className="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500"
-                >
+              <div className="flex justify-between mt-6">
+                <button onClick={() => router.push('/')} className="bg-gray-500 text-white px-4 py-2 rounded">
                   Decline
                 </button>
-                <button
-                  onClick={() => setAgreementAccepted(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                >
+                <button onClick={() => setAgreementAccepted(true)} className="bg-green-600 text-white px-4 py-2 rounded">
                   I Agree
                 </button>
               </div>
@@ -251,53 +226,27 @@ export default function AddItemPage() {
           </div>
         )}
 
-        {/* ✅ Main Form (disabled if agreement not accepted) */}
         <motion.div
-          className={`z-10 bg-white/90 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-2xl space-y-6 ${
+          className={`z-10 bg-white/95 p-6 rounded-lg shadow-2xl w-full max-w-2xl ${
             !agreementAccepted ? 'pointer-events-none opacity-40' : ''
           }`}
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7 }}
         >
-          <h1 className="text-2xl font-bold text-center text-green-700">
+          <h1 className="text-center text-2xl font-bold text-green-700 mb-6">
             Add Your Swap Item
           </h1>
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4">
-            {/* Basic info */}
-            <input
-              type="text"
-              placeholder="Item Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="border p-2 rounded"
-              required
-            />
-            <textarea
-              placeholder="Description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="border p-2 rounded"
-              rows={4}
-              required
-            />
-            <textarea
-              placeholder="What do you want in exchange?"
-              value={desiredSwap}
-              onChange={(e) => setDesiredSwap(e.target.value)}
-              className="border p-2 rounded"
-              rows={2}
-              required
-            />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input className="border p-2 rounded w-full" placeholder="Title" value={title}
+              onChange={(e) => setTitle(e.target.value)} />
 
-            {/* Category & Condition */}
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="border p-2 rounded"
-              required
-            >
+            <textarea className="border p-2 rounded w-full" placeholder="Description"
+              value={description} onChange={(e) => setDescription(e.target.value)} rows={3}/>
+
+            <textarea className="border p-2 rounded w-full" placeholder="Desired Swap"
+              value={desiredSwap} onChange={(e) => setDesiredSwap(e.target.value)} rows={2}/>
+
+            <select className="border p-2 rounded w-full" value={category}
+              onChange={(e) => setCategory(e.target.value)}>
               <option value="">Select Category</option>
               <option value="Food">Food Item</option>
               <option value="Phone">Phone Accessories</option>
@@ -309,142 +258,80 @@ export default function AddItemPage() {
               <option value="Others">Others</option>
             </select>
 
-            <select
-              value={condition}
-              onChange={(e) => setCondition(e.target.value)}
-              className="border p-2 rounded"
-              required
-            >
-              <option value="">Select Condition</option>
+            <select className="border p-2 rounded w-full" value={condition}
+              onChange={(e) => setCondition(e.target.value)}>
+              <option value="">Condition</option>
               <option value="New">New</option>
               <option value="Used">Used</option>
               <option value="Fairly Used">Fairly Used</option>
             </select>
 
-            {/* Address & Location */}
-            <input
-              type="text"
-              placeholder="Address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="border p-2 rounded"
-              required
-            />
-            <select
-              value={state}
-              onChange={(e) => setState(e.target.value)}
-              className="border p-2 rounded"
-              required
-            >
+            <input className="border p-2 rounded w-full" placeholder="Address"
+              value={address} onChange={(e) => setAddress(e.target.value)} />
+
+            <select className="border p-2 rounded w-full" value={state}
+              onChange={(e) => setState(e.target.value)}>
               <option value="">Select State</option>
               {statesLgas.states().map((s: string) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
+                <option key={s} value={s}>{s}</option>
               ))}
             </select>
-            <select
-              value={lga}
-              onChange={(e) => setLga(e.target.value)}
-              disabled={!state}
-              className="border p-2 rounded"
-              required
-            >
+
+            <select className="border p-2 rounded w-full" value={lga}
+              onChange={(e) => setLga(e.target.value)} disabled={!state}>
               <option value="">Select LGA</option>
               {lgas.map((l: string) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
+                <option key={l} value={l}>{l}</option>
               ))}
             </select>
-            <input
-              type="tel"
-              placeholder="Phone Number"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="border p-2 rounded"
-              required
-            />
 
-            {/* Value & Cash Option */}
-            <input
-              type="number"
-              placeholder="Estimated Value (₦)"
-              value={estimatedValue}
-              onChange={(e) => setEstimatedValue(e.target.value)}
-              className="border p-2 rounded"
-              required
-            />
-            <input
-              type="number"
-              placeholder="Add Cash Balance (Optional)"
-              value={cashBalance}
-              onChange={(e) => setCashBalance(e.target.value)}
-              className="border p-2 rounded"
-            />
+            <input className="border p-2 rounded w-full" placeholder="Phone Number"
+              value={phone} onChange={(e) => setPhone(e.target.value)} />
 
-            {/* Image Uploads */}
-            <label className="font-semibold">Upload 4 Images</label>
+            <input className="border p-2 rounded w-full" placeholder="Estimated Value ₦"
+              value={estimatedValue} onChange={(e) => setEstimatedValue(e.target.value)}
+              type="number"/>
+
+            <input className="border p-2 rounded w-full" placeholder="Extra Cash (Optional)"
+              value={cashBalance} onChange={(e) => setCashBalance(e.target.value)}
+              type="number"/>
+
+            <label className="font-semibold block">Upload 4 Images</label>
             {images.map((_, idx) => (
-              <input
-                key={idx}
-                type="file"
-                accept="image/*"
+              <input key={idx} type="file" accept="image/*"
+                className="border p-2 rounded" required
                 onChange={(e) =>
                   handleSingleImageUpload(idx, e.target.files ? e.target.files[0] : null)
-                }
-                className="border p-2 rounded bg-white"
-                required
-              />
+                }/>
             ))}
 
-            {/* Video Upload */}
-            <label className="font-semibold">Upload 60s Video</label>
-            <input
-              type="file"
-              accept="video/*"
+            <label className="font-semibold block">Upload 60s Video</label>
+            <input type="file" accept="video/*"
+              className="border p-2 rounded" required
               onChange={(e) => handleVideoUpload(e.target.files ? e.target.files[0] : null)}
-              className="border p-2 rounded bg-white"
-              required
             />
 
-            {/* ✅ Preview Swiper */}
             {previewSlides.length > 0 && (
               <Swiper
                 modules={[Navigation, Pagination]}
                 navigation
                 pagination={{ clickable: true }}
-                spaceBetween={10}
                 slidesPerView={1}
-                className="w-full rounded shadow"
+                className="w-full h-56 rounded shadow"
               >
-                {previewSlides.map((slide, idx) => (
-                  <SwiperSlide key={idx}>
+                {previewSlides.map((slide, i) => (
+                  <SwiperSlide key={i}>
                     {slide.type === 'image' ? (
-                      <img
-                        src={slide.url}
-                        alt={`preview-${idx}`}
-                        className="rounded shadow w-full h-60 object-cover"
-                      />
+                      <img src={slide.url} className="w-full h-56 object-cover rounded"/>
                     ) : (
-                      <video
-                        src={slide.url}
-                        controls
-                        autoPlay
-                        muted
-                        loop
-                        className="rounded shadow w-full h-60 object-cover"
-                      />
+                      <video src={slide.url} controls className="w-full h-56 rounded"/>
                     )}
                   </SwiperSlide>
                 ))}
               </Swiper>
             )}
 
-            <button
-              type="submit"
-              className="bg-green-600 text-white py-2 rounded hover:bg-green-700 transition font-semibold"
-            >
+            <button className="bg-green-600 text-white w-full py-2 rounded font-bold">
               Submit for Review
             </button>
           </form>

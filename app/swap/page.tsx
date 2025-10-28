@@ -84,11 +84,8 @@ export default function SwapPage() {
 
   const bucketUrl = 'https://rzjfumrvmmdluunqsqsp.supabase.co/storage/v1/object/public/';
 
+  // ✅ Modified: allow non-logged users to view item detail page
   const handleSwapClick = (itemId: string) => {
-    if (!user) {
-      router.push('/login');
-      return;
-    }
     router.push(`/swap/${itemId}`);
   };
 
@@ -132,7 +129,7 @@ export default function SwapPage() {
               const cash = Number(item.cash_balance || 0);
               const totalValue = estimated + cash;
 
-              const slides: { type: 'image' | 'video'; url: string }[] = [];
+              const slides = [];
               if (item.image_paths?.length > 0) {
                 item.image_paths.forEach((imgPath: string) => {
                   slides.push({ type: 'image', url: `${bucketUrl}item-images/${imgPath}` });
@@ -179,14 +176,13 @@ export default function SwapPage() {
 
                   <div className="p-4 flex flex-col flex-grow">
                     <h3 className="text-lg font-semibold text-green-700">{item.title}</h3>
-                    <p className="text-xs">
-                      📍 {item.state}, {item.lga}
-                    </p>
+                    <p className="text-xs">📍 {item.state}, {item.lga}</p>
                     <p className="text-xs">💰 Value: ₦{totalValue.toLocaleString()}</p>
                     {cash > 0 && (
                       <p className="text-xs text-blue-600">+ Cash Balance: ₦{cash.toLocaleString()}</p>
                     )}
                     <p className="text-xs">🛠️ {item.condition}</p>
+
                     {item.desired_swap && (
                       <p className="text-xs text-gray-600 mt-1">🎯 Wants: {item.desired_swap}</p>
                     )}
@@ -241,8 +237,7 @@ export default function SwapPage() {
                 className="w-full"
               >
                 {catItems.slice(3, 9).map((rec) => {
-                  const recValue =
-                    Number(rec.estimated_value || 0) + Number(rec.cash_balance || 0);
+                  const recValue = Number(rec.estimated_value || 0) + Number(rec.cash_balance || 0);
 
                   return (
                     <SwiperSlide key={rec.id}>
