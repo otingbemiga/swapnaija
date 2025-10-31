@@ -4,12 +4,12 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import Head from 'next/head';
-
 import Link from 'next/link';
 import { useSession } from '@supabase/auth-helpers-react';
 import { supabase } from '@/lib/supabaseClient';
 import toast from 'react-hot-toast';
-import { Eye, EyeOff } from 'lucide-react'; // 👁️ for password toggle
+import { Eye, EyeOff } from 'lucide-react'; // 👁️ password toggle
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 // ✅ Import with proper typing
 const statesLgas: {
@@ -29,13 +29,14 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const session = useSession();
   const router = useRouter();
+  const supabaseClient = createClientComponentClient();
 
+  // Redirect logged-in users
   useEffect(() => {
-    if (session) {
-      router.push('/');
-    }
+    if (session) router.push('/');
   }, [session, router]);
 
+  // Load LGAs dynamically
   useEffect(() => {
     if (state) {
       const selectedLgas = statesLgas.lgas(state)?.lgas || [];
@@ -43,6 +44,7 @@ export default function RegisterPage() {
     }
   }, [state]);
 
+  // ✅ Normal email/password registration
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -51,7 +53,6 @@ export default function RegisterPage() {
       return;
     }
 
-    // ✅ Pass metadata for trigger to insert into profiles automatically
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -80,9 +81,27 @@ export default function RegisterPage() {
       return;
     }
 
-    // ✅ Success toast
     toast.success('🎉 Registration successful! Please check your email to confirm your account.');
     router.push('/auth/login');
+  };
+
+  // ✅ Google signup/login
+  const handleGoogleSignup = async () => {
+    try {
+      const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (error) {
+        toast.error('Google sign-in failed: ' + error.message);
+        console.error(error);
+      }
+    } catch (err: any) {
+      toast.error('Google sign-in crashed: ' + err.message);
+      console.error(err);
+    }
   };
 
   return (
@@ -181,7 +200,7 @@ export default function RegisterPage() {
               ))}
             </select>
 
-            {/* Password with toggle eye */}
+            {/* Password field */}
             <div className="relative col-span-full">
               <input
                 type={showPassword ? 'text' : 'password'}
@@ -206,6 +225,25 @@ export default function RegisterPage() {
               Register
             </button>
           </form>
+
+          {/* OR separator */}
+          <div className="flex items-center my-4">
+            <hr className="flex-1 border-gray-300" />
+            <span className="px-2 text-gray-500 text-sm">OR</span>
+            <hr className="flex-1 border-gray-300" />
+          </div>
+
+          {/* ✅ Google Signup Button */}
+          <button
+            onClick={handleGoogleSignup}
+            className="w-full flex items-center justify-center gap-2 border py-2 rounded hover:bg-gray-100 transition"
+          >
+            <img 
+               src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
+              alt="Google" 
+              className="w-5 h-5" />
+            Sign up with Google
+          </button>
 
           <p className="text-center text-sm text-gray-700">
             Already have an account?{' '}

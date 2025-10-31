@@ -7,6 +7,7 @@ import { useSession } from '@supabase/auth-helpers-react';
 import toast from 'react-hot-toast';
 import Image from 'next/image';
 
+
 // ✅ Swiper imports
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination } from 'swiper/modules';
@@ -249,6 +250,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         console.log('✅ Admin notified successfully about edit.');
       } catch (notifyErr) {
         console.error('❌ Failed to notify admin:', notifyErr);
+        
       }
 
     toast.success('✅ Item updated successfully!');
@@ -259,6 +261,8 @@ const handleSubmit = async (e: React.FormEvent) => {
     toast.error('Failed to update item.');
   }
 };
+
+
 
 
   if (loading) return <p className="p-6">Loading item...</p>;

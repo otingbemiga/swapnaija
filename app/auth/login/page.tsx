@@ -32,10 +32,15 @@ export default function LoginPage() {
     checkSession();
   }, [router, supabase]);
 
+  // ✅ Email/password login
   const handleEmailLogin = async () => {
-    setLoading(true);
+    if (!email || !password) {
+      toast.error('Please enter both email and password');
+      return;
+    }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -49,6 +54,29 @@ export default function LoginPage() {
     toast.success('✅ Welcome back!');
     router.push('/');
     setLoading(false);
+  };
+
+  // ✅ Google OAuth login
+  const handleGoogleLogin = async () => {
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`, // ✅ callback route we set earlier
+        },
+      });
+
+      if (error) {
+        console.error('Google login error:', error.message);
+        toast.error('Failed to sign in with Google');
+      }
+    } catch (err: any) {
+      console.error('Unexpected Google login error:', err.message);
+      toast.error('Something went wrong. Try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -67,7 +95,7 @@ export default function LoginPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: 'easeOut' }}
         >
-          {/* Welcoming intro */}
+          {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -122,6 +150,29 @@ export default function LoginPage() {
               whileTap={{ scale: 0.97 }}
             >
               {loading ? 'Logging in...' : 'Login'}
+            </motion.button>
+
+            {/* Divider */}
+            <div className="flex items-center justify-center my-4">
+              <div className="border-t border-gray-300 w-1/4"></div>
+              <span className="text-gray-500 text-sm mx-2">OR</span>
+              <div className="border-t border-gray-300 w-1/4"></div>
+            </div>
+
+            {/* Google login button */}
+            <motion.button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={loading}
+              className="w-full border border-gray-300 bg-white py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-50 transition font-medium text-gray-700 shadow-sm"
+              whileTap={{ scale: 0.98 }}
+            >
+              <img
+                src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+                alt="Google"
+                className="w-5 h-5"
+              />
+              Continue with Google
             </motion.button>
 
             <div className="text-right text-sm">

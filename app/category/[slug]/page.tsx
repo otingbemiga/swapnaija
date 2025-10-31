@@ -6,21 +6,9 @@ import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 
-// ✅ Define a safe payload type
-type RealtimePayload<T = any> = {
-  commit_timestamp: string;
-  errors: any[] | null;
-  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
-  new: T | null;
-  old: T | null;
-  schema: string;
-  table: string;
-};
-
 // ✅ Swiper imports
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination } from 'swiper/modules';
-
 import 'swiper/css';
 import 'swiper/css/navigation';
 import 'swiper/css/pagination';
@@ -52,6 +40,23 @@ function highlightText(text: string, keyword: string) {
   );
 }
 
+// ✅ Notify user via server API route (safe for Vercel)
+async function notifyUserOfMatch(userId: string, itemId: string, itemTitle: string) {
+  try {
+    await fetch('/api/notify-match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        item_id: itemId,
+        message: `🎉 Your item "${itemTitle}" now has a potential match!`,
+      }),
+    });
+  } catch (err) {
+    console.error('⚠️ Failed to notify user:', err);
+  }
+}
+
 export default function CategoryPage() {
   const { slug } = useParams();
   const router = useRouter();
@@ -74,7 +79,7 @@ export default function CategoryPage() {
   const [matchItems, setMatchItems] = useState<Record<string, any[]>>({});
   const [loadingMatches, setLoadingMatches] = useState<string | null>(null);
 
-  // ✅ User points (sync with dashboard)
+  // ✅ User points
   const [userPoints, setUserPoints] = useState<number>(0);
 
   const observer = useRef<IntersectionObserver | null>(null);
@@ -112,29 +117,27 @@ export default function CategoryPage() {
     }
   };
 
-  // ✅ FIXED: Listen for realtime updates on points (correct .on() syntax)
- // ✅ Listen for realtime updates on points (Supabase v2+ syntax)
-useEffect(() => {
-  fetchUserPoints();
+  // ✅ Realtime updates on profile points
+  useEffect(() => {
+    fetchUserPoints();
 
-  // create the channel
-  const channel = supabase
-    .channel('points-updates')
-    .on(
-      'postgres_changes' as const, // explicit type
-      { event: 'UPDATE', schema: 'public', table: 'profiles' },
-      (payload: any) => {
-        if (payload.new && payload.new.points !== undefined) {
-          setUserPoints(payload.new.points);
+    const channel = supabase
+      .channel('points-updates')
+      .on(
+        'postgres_changes' as const,
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        (payload: any) => {
+          if (payload.new && payload.new.points !== undefined) {
+            setUserPoints(payload.new.points);
+          }
         }
-      }
-    )
-    .subscribe();
+      )
+      .subscribe();
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, []);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // ✅ Fetch items
   const fetchItems = async () => {
@@ -200,7 +203,7 @@ useEffect(() => {
     }
   };
 
-  // ✅ Fetch fuzzy matches
+  // ✅ Fetch fuzzy matches & trigger notifications
   const fetchMatches = async (item: any) => {
     setLoadingMatches(item.id);
 
@@ -211,16 +214,18 @@ useEffect(() => {
       });
 
       if (error) {
-        console.warn(
-          `❌ Fuzzy match RPC error for ${item.id}:`,
-          formatSupabaseError(error)
-        );
+        console.warn(`❌ Fuzzy match RPC error for ${item.id}:`, formatSupabaseError(error));
         setMatchItems((prev) => ({ ...prev, [item.id]: [] }));
       } else {
         const sortedMatches = (data || []).sort(
           (a: any, b: any) => b.similarity_score - a.similarity_score
         );
         setMatchItems((prev) => ({ ...prev, [item.id]: sortedMatches }));
+
+        // ✅ Notify user if matches exist
+        if (sortedMatches.length > 0) {
+          await notifyUserOfMatch(item.user_id, item.id, item.title);
+        }
       }
     } catch (err: any) {
       console.error('Unexpected match error:', formatSupabaseError(err));
@@ -257,8 +262,7 @@ useEffect(() => {
     if (key) fetchItems();
   }, [page, key, search, state, condition, minPoints, maxPoints]);
 
-  const bucketUrl =
-    'https://rzjfumrvmmdluunqsqsp.supabase.co/storage/v1/object/public/';
+  const bucketUrl = 'https://rzjfumrvmmdluunqsqsp.supabase.co/storage/v1/object/public/';
 
   return (
     <main className="p-6 max-w-6xl mx-auto min-h-screen bg-gradient-to-b from-green-100 via-white to-green-100">
@@ -379,7 +383,6 @@ useEffect(() => {
                     ))}
                   </Swiper>
                 )}
-
 
                 <div className="p-4 flex flex-col flex-grow">
                   <h2 className="text-lg font-semibold text-gray-800">
