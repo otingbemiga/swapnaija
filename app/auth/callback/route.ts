@@ -1,5 +1,5 @@
 // app/auth/callback/route.ts
-export const runtime = 'edge'; // ✅ Edge runtime is faster and fully supported on Vercel
+export const runtime = 'edge'; // ✅ Edge runtime is faster and supported on Vercel
 
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
@@ -17,14 +17,14 @@ export async function GET(request: Request) {
 
     const supabase = createRouteHandlerClient({ cookies });
 
-    // ✅ Exchange the code for a session
+    // ✅ Exchange the OAuth code for a Supabase session
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
     if (exchangeError) {
       console.error('❌ exchangeCodeForSession error:', exchangeError.message);
       return NextResponse.redirect(new URL('/', request.url));
     }
 
-    // ✅ Get the user session
+    // ✅ Retrieve the signed-in user
     const {
       data: { user },
       error: getUserError,
@@ -35,20 +35,34 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL('/', request.url));
     }
 
-    // ✅ Check role or redirect based on available user data
     const metadata = user.user_metadata || {};
     const role = metadata.role || 'user';
 
     console.log(`✅ OAuth login success for: ${user.email} (role: ${role})`);
 
-    // ✅ Redirect based on role
-    if (role === 'admin') {
-      return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-    } else {
-      return NextResponse.redirect(new URL('/user/userdashboard', request.url));
-    }
+    // ✅ Determine environment origin (handles both localhost and production)
+    const origin =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (process.env.NODE_ENV === 'production'
+        ? 'https://swapnaija.com.ng'
+        : 'http://localhost:3000');
+
+    // ✅ Redirect users based on their role
+    const redirectUrl =
+      role === 'admin'
+        ? `${origin}/admin/dashboard`
+        : `${origin}/user/userdashboard`;
+
+    console.log('🔀 Redirecting user to:', redirectUrl);
+
+    return NextResponse.redirect(redirectUrl);
   } catch (err: any) {
     console.error('🔥 /auth/callback unexpected error:', err.message || err);
-    return NextResponse.redirect(new URL('/', request.url));
+    const origin =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (process.env.NODE_ENV === 'production'
+        ? 'https://swapnaija.com.ng'
+        : 'http://localhost:3000');
+    return NextResponse.redirect(origin);
   }
 }

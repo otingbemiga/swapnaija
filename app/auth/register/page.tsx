@@ -111,7 +111,7 @@ export default function RegisterPage() {
       </Head>
 
       <main
-        className="min-h-screen bg-cover bg-center relative flex items-center justify-center px-4"
+        className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-100 relative flex items-center justify-center px-4"
         style={{
           backgroundImage: `url('https://img.freepik.com/free-vector/flat-sustainable-living-background_23-2149332014.jpg')`,
         }}
