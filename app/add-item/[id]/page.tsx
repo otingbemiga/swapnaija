@@ -9,8 +9,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination } from 'swiper/modules';
+import { motion } from 'framer-motion';
 
-// ✅ Define Item type (matches your DB schema)
+// ✅ Type definition
 type Item = {
   id: string;
   title: string;
@@ -38,92 +39,119 @@ export default function AddItemDetailPage() {
   const [matches, setMatches] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Lightbox state
+  // Lightbox state
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [zoom, setZoom] = useState(1);
 
-  // ✅ Supabase public bucket URLs
+  // ✅ Public bucket URLs
   const imageBucketUrl =
     'https://rzjfumrvmmdluunqsqsp.supabase.co/storage/v1/object/public/item-images/';
   const videoBucketUrl =
     'https://rzjfumrvmmdluunqsqsp.supabase.co/storage/v1/object/public/item-videos/';
 
+  // ✅ Fetch Item + Matches
   useEffect(() => {
     const fetchItemAndMatches = async () => {
-      // 🔧 Removed `<Item>` from .single()
-      const { data: itemData, error: itemError } = await supabase
-        .from('items')
-        .select('*')
-        .eq('id', id)
-        .single();
+      if (!id) return;
 
-      if (itemError || !itemData) {
-        toast.error('Item not found.');
-        router.push('/swap');
-        return;
-      }
+      setLoading(true);
 
-      setItem(itemData);
-      setLoading(false);
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const currentUserId = userData?.user?.id || null;
 
-      // Compute total value of this item
-      const itemTotal =
-        Number(itemData.estimated_value || 0) +
-        Number(itemData.cash_balance || 0);
+        const { data: itemData, error } = await supabase
+          .from('items')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
 
-      const minVal = Math.floor(itemTotal * 0.9);
-      const maxVal = Math.ceil(itemTotal * 1.1);
+        if (error) {
+          console.error('❌ Supabase error:', error.message);
+          toast.error('Failed to load item.');
+          setLoading(false);
+          return;
+        }
 
-      // Fetch potential matches
-      const { data: matchedItems, error: matchError } = await supabase
-        .from('items')
-        .select('*')
-        .neq('user_id', itemData.user_id)
-        .eq('status', 'approved')
-        .eq('category', itemData.category);
+        if (!itemData) {
+          toast.error('Item not found.');
+          setLoading(false);
+          return;
+        }
 
-      if (!matchError && matchedItems) {
-        const filtered = matchedItems.filter((m: Item) => {
+        // ✅ Allow the owner to see pending items (RLS safe)
+        if (itemData.status === 'pending' && itemData.user_id !== currentUserId) {
+          toast.error('This item is pending admin approval.');
+          setLoading(false);
+          return;
+        }
+
+        setItem(itemData);
+        setLoading(false);
+        console.log('✅ Item loaded:', itemData);
+
+        // ✅ Fetch potential matches (only if approved)
+        if (itemData.status === 'approved') {
           const total =
-            Number(m.estimated_value || 0) + Number(m.cash_balance || 0);
-          return total >= minVal && total <= maxVal;
-        });
+            Number(itemData.estimated_value || 0) +
+            Number(itemData.cash_balance || 0);
 
-        const sortedMatches = filtered.sort((a: Item, b: Item) => {
-          if (a.state === itemData.state && b.state !== itemData.state) return -1;
-          if (b.state === itemData.state && a.state !== itemData.state) return 1;
-          return 0;
-        });
+          const minVal = Math.floor(total * 0.9);
+          const maxVal = Math.ceil(total * 1.1);
 
-        setMatches(sortedMatches);
+          const { data: matchedItems } = await supabase
+            .from('items')
+            .select('*')
+            .neq('user_id', itemData.user_id)
+            .eq('status', 'approved')
+            .eq('category', itemData.category);
+
+          if (matchedItems) {
+            const filtered = matchedItems.filter((m: Item) => {
+              const val =
+                Number(m.estimated_value || 0) + Number(m.cash_balance || 0);
+              return val >= minVal && val <= maxVal;
+            });
+
+            const sorted = filtered.sort((a: Item, b: Item) => {
+              if (a.state === itemData.state && b.state !== itemData.state) return -1;
+              if (b.state === itemData.state && a.state !== itemData.state) return 1;
+              return 0;
+            });
+
+            setMatches(sorted);
+          }
+        }
+      } catch (err) {
+        console.error('❌ Unexpected error:', err);
+        toast.error('Error loading item.');
+        setLoading(false);
       }
     };
 
-    if (id) fetchItemAndMatches();
-  }, [id, router]);
+    fetchItemAndMatches();
+  }, [id]);
 
+  // ✅ Delete Item
   const handleDelete = async () => {
     if (!confirm('Are you sure you want to delete this item?')) return;
-
     const { error } = await supabase.from('items').delete().eq('id', id);
-    if (error) {
-      toast.error('Failed to delete item.');
-    } else {
+    if (error) toast.error('Failed to delete item.');
+    else {
       toast.success('Item deleted.');
       router.push('/swap');
     }
   };
 
-  if (loading) return <div className="p-6 text-center">Loading...</div>;
-  if (!item) return <div className="p-6 text-center">Item not found.</div>;
+  if (loading) return <div className="p-6 text-center">Loading item...</div>;
+  if (!item) return <div className="p-6 text-center text-red-600">Item not found.</div>;
 
   const isOwner = session?.user?.id === item.user_id;
 
-  // ✅ Build slides (images + video)
+  // ✅ Build slides
   const slides = [
-    ...(item.image_paths?.map((img: string) => ({ type: 'image', path: img })) ||
-      []),
+    ...(item.image_paths?.map((img) => ({ type: 'image', path: img })) || []),
     ...(item.video_path ? [{ type: 'video', path: item.video_path }] : []),
   ];
 
@@ -132,9 +160,20 @@ export default function AddItemDetailPage() {
 
   return (
     <main className="p-6 max-w-2xl mx-auto">
+         <motion.div
+        className="bg-white rounded-lg shadow-md overflow-hidden"
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+      >
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        {/* ✅ Media Swiper always on top */}
+        {/* ✅ Media Swiper */}
         {slides.length > 0 && (
+            <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
+          >
           <Swiper
             modules={[Navigation, Pagination]}
             navigation
@@ -176,43 +215,68 @@ export default function AddItemDetailPage() {
               </SwiperSlide>
             ))}
           </Swiper>
+          </motion.div>
         )}
 
-        {/* ✅ Item details below media */}
+        {/* ✅ Item Details */}
         <div className="p-6">
           <h1 className="text-2xl font-bold text-green-700 mb-3">{item.title}</h1>
-          <p className="mb-2"><strong>Description:</strong> {item.description}</p>
-          <p className="mb-2"><strong>Desired Swap:</strong> {item.desired_swap || 'Not specified'}</p>
-          <p className="mb-2"><strong>Category:</strong> {item.category}</p>
-          <p className="mb-2"><strong>Condition:</strong> {item.condition}</p>
-          <p className="mb-2"><strong>Address:</strong> {item.address}</p>
-          <p className="mb-2"><strong>Location:</strong> {item.state}, {item.lga}</p>
-          <p className="mb-2"><strong>Phone:</strong> {item.phone}</p>
-          <p className="mb-2"><strong>Estimated Value:</strong> ₦{Number(item.estimated_value || 0).toLocaleString()}</p>
-          <p className="mb-2"><strong>Cash Balance:</strong> ₦{Number(item.cash_balance || 0).toLocaleString()}</p>
+          <p><strong>Description:</strong> {item.description}</p>
+          <p><strong>Desired Swap:</strong> {item.desired_swap || 'Not specified'}</p>
+          <p><strong>Category:</strong> {item.category}</p>
+          <p><strong>Condition:</strong> {item.condition}</p>
+          <p><strong>Address:</strong> {item.address}</p>
+          <p><strong>Location:</strong> {item.state}, {item.lga}</p>
+          <p><strong>Phone:</strong> {item.phone}</p>
+          <p><strong>Estimated Value:</strong> ₦{Number(item.estimated_value || 0).toLocaleString()}</p>
+          <p><strong>Cash Balance:</strong> ₦{Number(item.cash_balance || 0).toLocaleString()}</p>
           <p className="text-green-700 font-semibold">💰 Total Value: ₦{totalValue.toLocaleString()}</p>
-          <p className="mb-2"><strong>Status:</strong> {item.status}</p>
+
+          <p className="mt-3">
+            <strong>Status:</strong>{' '}
+            {item.status === 'approved' ? (
+              <span className="text-green-700 font-semibold">Approved ✅</span>
+            ) : (
+              <span className="text-yellow-600 font-semibold">Pending Review ⏳</span>
+            )}
+          </p>
 
           {isOwner && (
             <div className="mt-4 flex gap-4">
-              <Link href={`/edit-item/${item.id}`} className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600">Edit</Link>
-              <button onClick={handleDelete} className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700">Delete</button>
+              <Link
+                href={`/edit-item/${item.id}`}
+                className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600"
+              >
+                Edit
+              </Link>
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          )}
+
+          {isOwner && item.status === 'pending' && (
+            <div className="mt-6 p-4 bg-yellow-100 border border-yellow-400 rounded text-yellow-800">
+              Your item has been submitted and is awaiting admin approval.
+              Once approved, it will appear on the public <strong>/swap</strong> page.
             </div>
           )}
         </div>
       </div>
 
       {/* ✅ Matching Items Section */}
-      {matches.length > 0 && (
+      {item.status === 'approved' && matches.length > 0 && (
         <div className="mt-10">
           <h2 className="text-xl font-semibold text-green-800 mb-4">
             Matching Swap Suggestions
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {matches.map((match: Item) => {
+            {matches.map((match) => {
               const matchTotal =
-                Number(match.estimated_value || 0) +
-                Number(match.cash_balance || 0);
+                Number(match.estimated_value || 0) + Number(match.cash_balance || 0);
               const diff = matchTotal - totalValue;
 
               let fairnessMsg = '';
@@ -224,46 +288,28 @@ export default function AddItemDetailPage() {
                 fairnessMsg = 'This is a fair swap ✅';
               }
 
-              const matchSlides = [
-                ...(match.image_paths?.map((img: string) => ({ type: 'image', path: img })) || []),
-                ...(match.video_path ? [{ type: 'video', path: match.video_path }] : []),
-              ];
-
               return (
                 <div key={match.id} className="bg-white rounded-lg shadow-md overflow-hidden">
-                  {matchSlides.length > 0 && (
-                    <Swiper
-                      modules={[Navigation, Pagination]}
-                      pagination={{ clickable: true }}
-                      spaceBetween={10}
-                      slidesPerView={1}
-                      className="w-full h-48"
-                    >
-                      {matchSlides.map((slide, idx) => (
-                        <SwiperSlide key={idx}>
-                          {slide.type === 'image' ? (
-                            <Image
-                              src={`${imageBucketUrl}${slide.path}`}
-                              alt={match.title}
-                              width={400}
-                              height={300}
-                              className="w-full h-48 object-cover"
-                              unoptimized
-                            />
-                          ) : (
-                            <video
-                              src={`${videoBucketUrl}${slide.path}`}
-                              controls
-                              muted
-                              loop
-                              className="w-full h-48 object-cover"
-                            />
-                          )}
-                        </SwiperSlide>
-                      ))}
-                    </Swiper>
-                  )}
-
+                  <Swiper
+                    modules={[Navigation, Pagination]}
+                    pagination={{ clickable: true }}
+                    spaceBetween={10}
+                    slidesPerView={1}
+                    className="w-full h-48"
+                  >
+                    {(match.image_paths || []).map((img, idx) => (
+                      <SwiperSlide key={idx}>
+                        <Image
+                          src={`${imageBucketUrl}${img}`}
+                          alt={match.title}
+                          width={400}
+                          height={300}
+                          className="w-full h-48 object-cover"
+                          unoptimized
+                        />
+                      </SwiperSlide>
+                    ))}
+                  </Swiper>
                   <div className="p-3">
                     <h3 className="font-bold text-lg text-green-700">{match.title}</h3>
                     <p>{match.description}</p>
@@ -310,10 +356,10 @@ export default function AddItemDetailPage() {
                   <Image
                     src={`${imageBucketUrl}${slide.path}`}
                     alt={`lightbox-${idx}`}
-                    width={900}
-                    height={600}
+                    width={600}
+                    height={400}
                     style={{ transform: `scale(${zoom})` }}
-                    className="transition-transform duration-300 rounded mx-auto"
+                    className="transition-transform duration-300 rounded mx-auto w-full h-80 object-contain cursor-pointer "
                     unoptimized
                   />
                 ) : (
@@ -347,6 +393,7 @@ export default function AddItemDetailPage() {
           )}
         </div>
       )}
+      </motion.div>
     </main>
   );
 }

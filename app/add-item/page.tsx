@@ -63,6 +63,28 @@ export default function AddItemPage() {
     }
   }, [state]);
 
+
+  useEffect(() => {
+  const channel = supabase
+    .channel('admin-notifications')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'notifications' },
+      (payload) => {
+        toast.success(`🔔 ${payload.new.title}`);
+        // Optionally update local state here
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+
+
+
+
   const handleSingleImageUpload = (index: number, file: File | null) => {
     const newImages = [...images];
     const newPreviews = [...previewUrls];
@@ -81,37 +103,37 @@ export default function AddItemPage() {
     setVideoPreview(URL.createObjectURL(file));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    const { data } = await supabase.auth.getUser();
-    const user = data.user;
+  const { data } = await supabase.auth.getUser();
+  const user = data.user;
+  if (!user) return toast.error('Please login again.');
+  if (!agreementAccepted) return toast.error('⚠️ You must agree to the terms.');
 
-    if (!user) return toast.error('Please login again.');
+  if (
+    !title ||
+    !description ||
+    !desiredSwap ||
+    !category ||
+    images.some((img) => img === null) ||
+    !video ||
+    !state ||
+    !lga ||
+    !phone ||
+    !address ||
+    !condition ||
+    !estimatedValue
+  ) {
+    return toast.error('All fields are required!');
+  }
 
-    if (!agreementAccepted)
-      return toast.error('⚠️ You must agree to the terms.');
-
-    if (
-      !title ||
-      !description ||
-      !desiredSwap ||
-      !category ||
-      images.some((img) => img === null) ||
-      !video ||
-      !state ||
-      !lga ||
-      !phone ||
-      !address ||
-      !condition ||
-      !estimatedValue
-    )
-      return toast.error('All fields are required!');
-
-    try {
-      const { data: insertedItem, error } = await supabase
-        .from('items')
-        .insert({
+  try {
+    // ✅ Step 1: Insert item record
+    const { data: insertedItem, error } = await supabase
+      .from('items')
+      .insert([
+        {
           title,
           description,
           desired_swap: desiredSwap,
@@ -127,51 +149,111 @@ export default function AddItemPage() {
           status: 'pending',
           image_paths: [],
           video_path: null,
-        })
-        .select()
-        .single();
+        },
+      ])
+      .select()
+      .single();
 
-      if (error) throw error;
+    if (error) throw error;
+    if (!insertedItem) throw new Error('Item insertion failed');
 
-      toast.success('Item submitted for review ✅');
-      router.push(`/add-item/${insertedItem.id}`);
+    toast.success('✅ Item submitted successfully! Uploading media...');
 
-      (async () => {
-        try {
-          const uploadedImages: string[] = [];
+    // ✅ Step 2: Background upload (non-blocking)
+    (async () => {
+      try {
+        const uploadedImages: string[] = [];
 
-          for (const image of images) {
-            if (!image) continue;
-            const filePath = `public/images/${insertedItem.id}-${Date.now()}-${image.name}`;
-            await supabase.storage.from('item-images').upload(filePath, image);
-            uploadedImages.push(filePath.replace('public/', ''));
-          }
+        for (const image of images) {
+          if (!image) continue;
+          const filePath = `${insertedItem.id}-${Date.now()}-${image.name}`;
+          const { error: imgErr } = await supabase.storage
+            .from('item-images')
+            .upload(filePath, image);
 
-          let uploadedVideo: string | null = null;
-          if (video) {
-            const videoPath = `public/videos/${insertedItem.id}-${Date.now()}-${video.name}`;
-            await supabase.storage.from('item-videos').upload(videoPath, video);
-            uploadedVideo = videoPath.replace('public/', '');
-          }
-
-          await supabase
-            .from('items')
-            .update({ image_paths: uploadedImages, video_path: uploadedVideo })
-            .eq('id', insertedItem.id);
-
-        } catch (uploadErr) {
-          console.warn('⚠ Upload issue:', uploadErr);
+          if (!imgErr) uploadedImages.push(filePath);
         }
-      })();
 
-    } catch (err: any) {
-      console.warn(err.message);
-      toast.error('Could not submit item.');
+        let uploadedVideo: string | null = null;
+        if (video) {
+          const videoPath = `${insertedItem.id}-${Date.now()}-${video.name}`;
+          const { error: vidErr } = await supabase.storage
+            .from('item-videos')
+            .upload(videoPath, video);
+          if (!vidErr) uploadedVideo = videoPath;
+        }
+
+        await supabase
+          .from('items')
+          .update({
+            image_paths: uploadedImages,
+            video_path: uploadedVideo,
+          })
+          .eq('id', insertedItem.id);
+
+        console.log('✅ Media upload complete.');
+      } catch (uploadErr) {
+        console.warn('⚠ Media upload issue:', uploadErr);
+      }
+    })();
+
+    // ✅ Step 3: Confirm visibility (RLS delay protection)
+    let verified = false;
+    // ✅ Wait until the item becomes visible before redirect
+for (let i = 0; i < 12; i++) {
+  const { data: check, error: checkError } = await supabase
+    .from('items')
+    .select('id')
+    .eq('id', insertedItem.id)
+    .maybeSingle();
+
+  if (check?.id) {
+    console.log('✅ Item is now visible. Redirecting...');
+    router.push(`/add-item/${insertedItem.id}`);
+    return;
+  }
+
+  console.log(`⏳ Waiting for item visibility... attempt ${i + 1}`);
+  await new Promise((r) => setTimeout(r, 1000)); // wait 1 second
+}
+   // ✅ Step 4: Notify admin about new item
+      try {
+        await fetch('/api/notify-admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'New Item Submission',
+            message: `A new item "${title}" has been added by a user and requires admin approval.`,
+            sender_id: user.id,
+            recipient_id: 'admin',
+            item_id: insertedItem.id,
+          }),
+        });
+        console.log('✅ Admin notified successfully.');
+      } catch (notifyErr) {
+        console.error('❌ Failed to notify admin:', notifyErr);
+      }
+
+
+    if (verified) {
+      toast.success('🎉 Item created! Redirecting...');
+      router.push(`/add-item/${insertedItem.id}`); // ✅ Go to detail page
+    } else {
+      toast.error(
+        'Item created but not yet visible. Please refresh or check your dashboard.'
+      );
     }
-  };
+  } catch (err: any) {
+    console.error('Submit error:', err.message);
+    toast.error('❌ Could not submit item.');
+  }
+};
+
+
+
 
   const previewSlides = [
-    ...previewUrls.filter(Boolean).map(url => ({ type: 'image', url: url! })),
+    ...previewUrls.filter(Boolean).map((url) => ({ type: 'image', url: url! })),
     ...(videoPreview ? [{ type: 'video', url: videoPreview }] : []),
   ];
 

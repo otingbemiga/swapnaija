@@ -10,7 +10,7 @@ import FloatingButton from '@/components/FloatingButton';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination } from 'swiper/modules';
 import { motion } from 'framer-motion';
-import Link from 'next/link'; // ✅ Added to support login/register links
+import Link from 'next/link';
 import 'swiper/css';
 import 'swiper/css/navigation';
 import 'swiper/css/pagination';
@@ -79,11 +79,17 @@ export default function SwapChatPage() {
   useEffect(() => {
     const fetchItem = async () => {
       if (!id) return;
-      const { data: itemData, error } = await supabase.from('items').select('*').eq('id', id).maybeSingle();
+      const { data: itemData, error } = await supabase
+        .from('items')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
       if (error || !itemData) {
         toast.error('Item not found');
         return;
       }
+
       setItem(itemData);
       const { data: ownerData } = await supabase
         .from('profiles')
@@ -100,7 +106,10 @@ export default function SwapChatPage() {
     const fetchMyItems = async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
-      const { data: items } = await supabase.from('items').select('id,title,image_paths').eq('user_id', data.user.id);
+      const { data: items } = await supabase
+        .from('items')
+        .select('id,title,image_paths')
+        .eq('user_id', data.user.id);
       if (items) setMyItems(items);
     };
     fetchMyItems();
@@ -118,23 +127,32 @@ export default function SwapChatPage() {
     }
   };
 
+  // ✅ FIXED useEffect cleanup issue
   useEffect(() => {
     if (!session?.user || !owner) return;
+
     const channel = supabase
       .channel('messages-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        const newMsg = payload.new as Message;
-        if (
-          (newMsg.from_user === session.user.id && newMsg.to_user === owner.id) ||
-          (newMsg.from_user === owner.id && newMsg.to_user === session.user.id)
-        ) {
-          setMessages((prev: Message[]) => [...prev, newMsg]);
-          scrollToBottom();
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          const newMsg = payload.new as Message;
+          if (
+            (newMsg.from_user === session.user.id && newMsg.to_user === owner.id) ||
+            (newMsg.from_user === owner.id && newMsg.to_user === session.user.id)
+          ) {
+            setMessages((prev: Message[]) => [...prev, newMsg]);
+            scrollToBottom();
+          }
         }
-      })
+      )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    // ✅ Cleanup must be synchronous
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [session?.user, owner, supabase]);
 
   useEffect(() => {
@@ -187,20 +205,36 @@ export default function SwapChatPage() {
 
       {/* ✅ Media always displayed */}
       {slides.length > 0 && (
-        <Swiper modules={[Navigation, Pagination]} navigation pagination={{ clickable: true }} slidesPerView={1} className="w-full h-72 mb-6">
+        <Swiper
+          modules={[Navigation, Pagination]}
+          navigation
+          pagination={{ clickable: true }}
+          slidesPerView={1}
+          className="w-full h-72 mb-6"
+        >
           {slides.map((path, i) => (
             <SwiperSlide key={i}>
               {path.endsWith('.mp4') ? (
-                <video src={`${videoBucketUrl}${path}`} controls className="w-full h-72 object-cover rounded" />
+                <video
+                  src={`${videoBucketUrl}${path}`}
+                  controls
+                  className="w-full h-72 object-cover rounded"
+                />
               ) : (
-                <Image src={`${imageBucketUrl}${path}`} alt="item" width={800} height={600} className="w-full h-72 object-cover rounded" />
+                <Image
+                  src={`${imageBucketUrl}${path}`}
+                  alt="item"
+                  width={800}
+                  height={600}
+                  className="w-full h-72 object-cover rounded"
+                />
               )}
             </SwiperSlide>
           ))}
         </Swiper>
       )}
 
-      {/* ✅ Item Details always displayed */}
+      {/* ✅ Item Details */}
       <div className="bg-white shadow rounded p-4 mb-8">
         <h2 className="font-bold text-lg mb-3">📋 Item Details</h2>
         <p><strong>Condition:</strong> {item.condition || 'N/A'}</p>
@@ -208,20 +242,24 @@ export default function SwapChatPage() {
         <p><strong>Points:</strong> {item.estimated_value || 0}</p>
       </div>
 
-      {/* ✅ LOGIN WALL - Show only when NOT logged in */}
+      {/* ✅ Login wall */}
       {!session?.user && (
         <div className="bg-white shadow p-6 rounded text-center border border-green-600 mb-8">
           <p className="font-medium text-gray-700 mb-3">
             🔐 Login or Create Account to view owner info and chat with the seller
           </p>
           <div className="flex justify-center gap-3">
-            <Link href="/auth/login" className="bg-green-600 text-white px-4 py-2 rounded">Login</Link>
-            <Link href="/auth/register" className="bg-gray-700 text-white px-4 py-2 rounded">Register</Link>
+            <Link href="/auth/login" className="bg-green-600 text-white px-4 py-2 rounded">
+              Login
+            </Link>
+            <Link href="/auth/register" className="bg-gray-700 text-white px-4 py-2 rounded">
+              Register
+            </Link>
           </div>
         </div>
       )}
 
-      {/* ✅ Owner Info - SHOW ONLY IF LOGGED IN */}
+      {/* ✅ Owner Info */}
       {session?.user && owner && (
         <div className="bg-white shadow p-4 rounded mb-6">
           <h2 className="font-bold text-lg mb-2">👤 Owner Info</h2>
@@ -231,16 +269,26 @@ export default function SwapChatPage() {
         </div>
       )}
 
-      {/* ✅ Select item & Chat - ONLY LOGGED USERS */}
+      {/* ✅ Select item & Chat */}
       {session?.user && (
         <>
           <div className="bg-white shadow p-4 rounded mb-6">
             <h2 className="font-bold mb-2">🔁 Select your item for swap</h2>
-            <p><strong className="text-red-600">It is important to select item before you chat</strong></p>
-            <select className="w-full border rounded p-2" value={myItemId} onChange={(e) => setMyItemId(e.target.value)}>
+            <p>
+              <strong className="text-red-600">
+                It is important to select item before you chat
+              </strong>
+            </p>
+            <select
+              className="w-full border rounded p-2"
+              value={myItemId}
+              onChange={(e) => setMyItemId(e.target.value)}
+            >
               <option value="">-- Choose your item --</option>
               {myItems.map((mi) => (
-                <option key={mi.id} value={mi.id}>{mi.title}</option>
+                <option key={mi.id} value={mi.id}>
+                  {mi.title}
+                </option>
               ))}
             </select>
           </div>
@@ -252,7 +300,9 @@ export default function SwapChatPage() {
                 <div
                   key={m.id}
                   className={`mb-2 p-2 rounded max-w-[75%] ${
-                    m.from_user === session?.user?.id ? 'bg-green-100 ml-auto text-right' : 'bg-gray-200 mr-auto'
+                    m.from_user === session?.user?.id
+                      ? 'bg-green-100 ml-auto text-right'
+                      : 'bg-gray-200 mr-auto'
                   }`}
                 >
                   <p className="text-sm">{m.content}</p>
@@ -278,7 +328,13 @@ export default function SwapChatPage() {
                   }
                 }}
               />
-              <button onClick={handleSend} disabled={isOwner} className={`px-4 py-2 rounded ${isOwner ? 'bg-gray-400' : 'bg-green-600 text-white'}`}>
+              <button
+                onClick={handleSend}
+                disabled={isOwner}
+                className={`px-4 py-2 rounded ${
+                  isOwner ? 'bg-gray-400' : 'bg-green-600 text-white'
+                }`}
+              >
                 Send
               </button>
             </div>

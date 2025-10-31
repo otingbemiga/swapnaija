@@ -1,18 +1,22 @@
-// /app/api/notify-admin/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // ✅ service role for server inserts
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// GET: fetch all notifications (admins should normally use get_admin_notifications RPC)
+// ✅ Fallback admin ID
+const ADMIN_ID =
+  process.env.ADMIN_USER_ID || "6bce5da8-9255-4e25-925a-4344d7436fe2";
+
+// GET: Fetch all admin/global notifications
 export async function GET() {
   try {
     const { data, error } = await supabase
       .from("notifications")
       .select("*")
+      .or(`recipient_id.eq.${ADMIN_ID},recipient_id.is.null`)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -27,7 +31,7 @@ export async function GET() {
   }
 }
 
-// POST: create an admin notification
+// POST: Create admin notification
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -47,7 +51,7 @@ export async function POST(req: Request) {
           type,
           message,
           sender_id,
-          recipient_id: recipient_id || null, // optional if global admin notice
+          recipient_id: recipient_id || ADMIN_ID, // ✅ always send to admin
           item_id: item_id || null,
           status: "unread",
           created_at: new Date().toISOString(),
@@ -68,7 +72,7 @@ export async function POST(req: Request) {
   }
 }
 
-// PATCH: update notification status (mark as read, etc.)
+// PATCH: Mark as read/update status
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();

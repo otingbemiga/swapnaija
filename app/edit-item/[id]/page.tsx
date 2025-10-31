@@ -233,6 +233,24 @@ const handleSubmit = async (e: React.FormEvent) => {
         .eq('user_id', session.user.id);
     }
 
+     // ✅ Step 3: Notify Admin
+      try {
+        await fetch('/api/notify-admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'Item Edited',
+            message: `An item "${title}" was updated by a user and needs admin review.`,
+            sender_id: session.user.id,
+            recipient_id: 'admin',
+            item_id: itemId,
+          }),
+        });
+        console.log('✅ Admin notified successfully about edit.');
+      } catch (notifyErr) {
+        console.error('❌ Failed to notify admin:', notifyErr);
+      }
+
     toast.success('✅ Item updated successfully!');
     router.push('/user/userdashboard');
 
