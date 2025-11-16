@@ -79,7 +79,7 @@ export default function AboutPage() {
             Sign Up
           </Link>
           <Link
-            href="/contact"
+            href="/support"
             className="bg-white text-black hover:bg-gray-200 focus:ring focus:ring-white transition px-6 py-3 rounded font-semibold"
           >
             Contact Us

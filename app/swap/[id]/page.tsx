@@ -59,6 +59,7 @@ export default function SwapChatPage() {
   const [myItemId, setMyItemId] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const previousItemRef = useRef<string>('');
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -115,19 +116,40 @@ export default function SwapChatPage() {
     fetchMyItems();
   }, [supabase]);
 
-  const fetchMessages = async (otherUserId: string) => {
-    const { data } = await supabase.auth.getUser();
-    const currentUser = data.user;
-    if (!currentUser) return;
-    const res = await fetch(`/api/messages?userA=${currentUser.id}&userB=${otherUserId}`);
-    const json = await res.json();
-    if (Array.isArray(json)) {
-      setMessages(json);
-      scrollToBottom();
-    }
-  };
 
-  // ✅ FIXED useEffect cleanup issue
+const fetchMessages = async (otherUserId: string) => {
+  const { data } = await supabase.auth.getUser();
+  const currentUser = data.user;
+  if (!currentUser || !myItemId || !item?.id) return;
+
+  try {
+    const query = new URLSearchParams({
+      userA: currentUser.id,
+      userB: otherUserId,
+      itemA: myItemId,
+      itemB: item.id,
+    });
+
+    const res = await fetch(`/api/messages?${query.toString()}`);
+    const json = await res.json();
+
+    if (!res.ok) {
+      console.error("❌ fetchMessages failed:", json.error);
+      throw new Error(json.error || "Failed to load messages");
+    }
+
+    setMessages(Array.isArray(json) ? json : []);
+    scrollToBottom();
+  } catch (err: any) {
+    console.error("❌ fetchMessages error:", err.message);
+    toast.error("Unable to load messages.");
+  }
+};
+
+
+
+
+  // ✅ Real-time updates for messages
   useEffect(() => {
     if (!session?.user || !owner) return;
 
@@ -149,21 +171,34 @@ export default function SwapChatPage() {
       )
       .subscribe();
 
-    // ✅ Cleanup must be synchronous
     return () => {
       supabase.removeChannel(channel);
     };
   }, [session?.user, owner, supabase]);
 
+  // ✅ Load messages when owner or selected item changes
   useEffect(() => {
-    if (owner && session?.user) fetchMessages(owner.id);
-  }, [owner, session]);
+    if (owner && session?.user && myItemId) {
+      // if selected item changed
+      if (previousItemRef.current !== myItemId) {
+        if (previousItemRef.current) {
+          // new item selected → start new blank chat
+          setMessages([]);
+          toast.success('🆕 New item selected. Start a new chat.');
+        }
+        previousItemRef.current = myItemId;
+      }
+
+      // check if chat history exists for this item
+      fetchMessages(owner.id, myItemId);
+    }
+  }, [owner, session, myItemId]);
 
   const handleSend = async () => {
-    if (!message.trim()) return toast.error("Message is empty");
-    if (!session?.user?.id) return toast.error("Login required");
-    if (!owner?.id) return toast.error("No recipient");
-    if (!myItemId) return toast.error("Select your item before sending message");
+    if (!message.trim()) return toast.error('Message is empty');
+    if (!session?.user?.id) return toast.error('Login required');
+    if (!owner?.id) return toast.error('No recipient');
+    if (!myItemId) return toast.error('Select your item before sending message');
 
     const payload = {
       from_user: session.user.id,
@@ -239,7 +274,7 @@ export default function SwapChatPage() {
         <h2 className="font-bold text-lg mb-3">📋 Item Details</h2>
         <p><strong>Condition:</strong> {item.condition || 'N/A'}</p>
         <p><strong>Desired Swap:</strong> {item.desired_swap || 'Any good offer'}</p>
-        <p><strong>Points:</strong> {item.estimated_value || 0}</p>
+        <p><strong>Amount:</strong> {item.estimated_value || 0}</p>
       </div>
 
       {/* ✅ Login wall */}

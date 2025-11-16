@@ -1,36 +1,65 @@
-// app/api/messages/route.ts
 export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // Must use service role for insert
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// ✅ Get all messages between two users
+// ✅ Safe UUID check
+function isUUID(str: string) {
+  return /^[0-9a-fA-F-]{36}$/.test(str);
+}
+
+// ✅ Get all messages between two users and their selected items
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const userA = searchParams.get("userA");
     const userB = searchParams.get("userB");
+    const itemA = searchParams.get("itemA");
+    const itemB = searchParams.get("itemB");
 
-    if (!userA || !userB)
-      return NextResponse.json({ error: "Missing user IDs" }, { status: 400 });
+    // Validate all parameters
+    if (!userA || !userB || !itemA || !itemB) {
+      return NextResponse.json(
+        { error: "Missing one or more required parameters." },
+        { status: 400 }
+      );
+    }
 
+    if (![userA, userB, itemA, itemB].every(isUUID)) {
+      return NextResponse.json({ error: "Invalid UUID format" }, { status: 400 });
+    }
+
+    // ✅ Query for messages between both users for both items
     const { data, error } = await supabase
       .from("messages")
       .select("*")
       .or(
-        `and(from_user.eq.${userA},to_user.eq.${userB}),and(from_user.eq.${userB},to_user.eq.${userA})`
+        [
+          `and(from_user.eq.${userA},to_user.eq.${userB},item_a_id.eq.${itemA},item_b_id.eq.${itemB})`,
+          `and(from_user.eq.${userB},to_user.eq.${userA},item_a_id.eq.${itemB},item_b_id.eq.${itemA})`
+        ].join(",")
       )
       .order("created_at", { ascending: true });
 
-    if (error) throw error;
+    if (error) {
+      console.error("❌ Supabase query error:", error.message);
+      return NextResponse.json(
+        { error: "Supabase query failed: " + error.message },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(data || []);
   } catch (err: any) {
-    console.error("GET /messages error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("🔥 GET /api/messages failed:", err.message || err);
+    return NextResponse.json(
+      { error: err.message || "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
 
@@ -40,17 +69,16 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { from_user, to_user, content, item_a_id, item_b_id } = body;
 
-    if (!from_user || !to_user || !content)
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    if (!from_user || !to_user || !content || !item_a_id || !item_b_id) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
 
-    // Prevent invalid UUIDs
-    const validateUUID = (val: string) => val && /^[0-9a-fA-F-]{36}$/.test(val);
-    if (!validateUUID(from_user) || !validateUUID(to_user))
-      return NextResponse.json({ error: "Invalid user UUIDs" }, { status: 400 });
-    if (item_a_id && !validateUUID(item_a_id))
-      return NextResponse.json({ error: "Invalid item_a_id UUID" }, { status: 400 });
-    if (item_b_id && !validateUUID(item_b_id))
-      return NextResponse.json({ error: "Invalid item_b_id UUID" }, { status: 400 });
+    if (![from_user, to_user, item_a_id, item_b_id].every(isUUID)) {
+      return NextResponse.json({ error: "Invalid UUID format" }, { status: 400 });
+    }
 
     const { data, error } = await supabase
       .from("messages")
@@ -58,11 +86,20 @@ export async function POST(req: Request) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("❌ Supabase insert error:", error.message);
+      return NextResponse.json(
+        { error: "Failed to send message: " + error.message },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(data);
   } catch (err: any) {
-    console.error("POST /messages error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("🔥 POST /api/messages failed:", err.message || err);
+    return NextResponse.json(
+      { error: err.message || "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
