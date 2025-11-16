@@ -9,7 +9,6 @@ import toast from 'react-hot-toast';
 import FloatingButton from '@/components/FloatingButton';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination } from 'swiper/modules';
-import { motion } from 'framer-motion';
 import Link from 'next/link';
 import 'swiper/css';
 import 'swiper/css/navigation';
@@ -76,80 +75,82 @@ export default function SwapChatPage() {
     })();
   }, [supabase]);
 
-  // Fetch item & owner
+  // Fetch the viewed item and its owner
   useEffect(() => {
     const fetchItem = async () => {
       if (!id) return;
-      const { data: itemData, error } = await supabase
+      const { data: itemData } = await supabase
         .from('items')
         .select('*')
         .eq('id', id)
         .maybeSingle();
 
-      if (error || !itemData) {
+      if (!itemData) {
         toast.error('Item not found');
         return;
       }
 
       setItem(itemData);
+
       const { data: ownerData } = await supabase
         .from('profiles')
         .select('id, full_name, phone, address')
         .eq('id', itemData.user_id)
         .maybeSingle();
+
       if (ownerData) setOwner(ownerData);
     };
+
     fetchItem();
   }, [id, supabase]);
 
-  // Fetch user's items
+  // Fetch user's own items
   useEffect(() => {
     const fetchMyItems = async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
+
       const { data: items } = await supabase
         .from('items')
         .select('id,title,image_paths')
         .eq('user_id', data.user.id);
+
       if (items) setMyItems(items);
     };
     fetchMyItems();
   }, [supabase]);
 
+  // ✅ FIXED fetchMessages → Now accepts myItemId
+  const fetchMessages = async (otherUserId: string, selectedItemId: string) => {
+    const { data } = await supabase.auth.getUser();
+    const currentUser = data.user;
+    if (!currentUser || !selectedItemId || !item?.id) return;
 
-const fetchMessages = async (otherUserId: string) => {
-  const { data } = await supabase.auth.getUser();
-  const currentUser = data.user;
-  if (!currentUser || !myItemId || !item?.id) return;
+    try {
+      const params = new URLSearchParams({
+        userA: currentUser.id,
+        userB: otherUserId,
+        itemA: selectedItemId,
+        itemB: item.id,
+      });
 
-  try {
-    const query = new URLSearchParams({
-      userA: currentUser.id,
-      userB: otherUserId,
-      itemA: myItemId,
-      itemB: item.id,
-    });
+      const res = await fetch(`/api/messages?${params.toString()}`);
+      const json = await res.json();
 
-    const res = await fetch(`/api/messages?${query.toString()}`);
-    const json = await res.json();
+      if (!res.ok) {
+        console.error("❌ fetchMessages failed:", json.error);
+        return;
+      }
 
-    if (!res.ok) {
-      console.error("❌ fetchMessages failed:", json.error);
-      throw new Error(json.error || "Failed to load messages");
+      setMessages(Array.isArray(json) ? json : []);
+      scrollToBottom();
+    } catch (err: any) {
+      console.error("❌ fetchMessages error:", err.message);
+      toast.error("Unable to load messages");
     }
+  };
 
-    setMessages(Array.isArray(json) ? json : []);
-    scrollToBottom();
-  } catch (err: any) {
-    console.error("❌ fetchMessages error:", err.message);
-    toast.error("Unable to load messages.");
-  }
-};
-
-
-
-
-  // ✅ Real-time updates for messages
+  // ✅ Real-time update listener
   useEffect(() => {
     if (!session?.user || !owner) return;
 
@@ -158,13 +159,15 @@ const fetchMessages = async (otherUserId: string) => {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
-        (payload) => {
+        payload => {
           const newMsg = payload.new as Message;
-          if (
+
+          const shouldShow =
             (newMsg.from_user === session.user.id && newMsg.to_user === owner.id) ||
-            (newMsg.from_user === owner.id && newMsg.to_user === session.user.id)
-          ) {
-            setMessages((prev: Message[]) => [...prev, newMsg]);
+            (newMsg.from_user === owner.id && newMsg.to_user === session.user.id);
+
+          if (shouldShow) {
+            setMessages(prev => [...prev, newMsg]);
             scrollToBottom();
           }
         }
@@ -176,20 +179,18 @@ const fetchMessages = async (otherUserId: string) => {
     };
   }, [session?.user, owner, supabase]);
 
-  // ✅ Load messages when owner or selected item changes
+  // ✅ Load messages when selected item changes
   useEffect(() => {
     if (owner && session?.user && myItemId) {
-      // if selected item changed
+      // detect item change
       if (previousItemRef.current !== myItemId) {
         if (previousItemRef.current) {
-          // new item selected → start new blank chat
-          setMessages([]);
+          setMessages([]); // start fresh chat for new item
           toast.success('🆕 New item selected. Start a new chat.');
         }
         previousItemRef.current = myItemId;
       }
 
-      // check if chat history exists for this item
       fetchMessages(owner.id, myItemId);
     }
   }, [owner, session, myItemId]);
@@ -198,7 +199,7 @@ const fetchMessages = async (otherUserId: string) => {
     if (!message.trim()) return toast.error('Message is empty');
     if (!session?.user?.id) return toast.error('Login required');
     if (!owner?.id) return toast.error('No recipient');
-    if (!myItemId) return toast.error('Select your item before sending message');
+    if (!myItemId) return toast.error('Select your item before sending');
 
     const payload = {
       from_user: session.user.id,
@@ -213,9 +214,10 @@ const fetchMessages = async (otherUserId: string) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+
     if (res.ok) {
       const json = await res.json();
-      setMessages((prev: Message[]) => [...prev, json]);
+      setMessages(prev => [...prev, json]);
       setMessage('');
       scrollToBottom();
     }
@@ -223,8 +225,8 @@ const fetchMessages = async (otherUserId: string) => {
 
   if (!item) {
     return (
-      <main className="p-6 text-center min-h-screen flex items-center justify-center">
-        <p>Loading item details...</p>
+      <main className="p-6 min-h-screen flex items-center justify-center">
+        <p>Loading item...</p>
       </main>
     );
   }
@@ -238,7 +240,7 @@ const fetchMessages = async (otherUserId: string) => {
 
       <h1 className="text-3xl font-extrabold text-green-700 mb-4">{item.title}</h1>
 
-      {/* ✅ Media always displayed */}
+      {/* Media */}
       {slides.length > 0 && (
         <Swiper
           modules={[Navigation, Pagination]}
@@ -269,19 +271,19 @@ const fetchMessages = async (otherUserId: string) => {
         </Swiper>
       )}
 
-      {/* ✅ Item Details */}
+      {/* Item Info */}
       <div className="bg-white shadow rounded p-4 mb-8">
         <h2 className="font-bold text-lg mb-3">📋 Item Details</h2>
-        <p><strong>Condition:</strong> {item.condition || 'N/A'}</p>
-        <p><strong>Desired Swap:</strong> {item.desired_swap || 'Any good offer'}</p>
-        <p><strong>Amount:</strong> {item.estimated_value || 0}</p>
+        <p><strong>Condition:</strong> {item.condition}</p>
+        <p><strong>Desired Swap:</strong> {item.desired_swap}</p>
+        <p><strong>Amount:</strong> {item.estimated_value}</p>
       </div>
 
-      {/* ✅ Login wall */}
+      {/* Login wall */}
       {!session?.user && (
         <div className="bg-white shadow p-6 rounded text-center border border-green-600 mb-8">
           <p className="font-medium text-gray-700 mb-3">
-            🔐 Login or Create Account to view owner info and chat with the seller
+            🔐 Login or Create Account to view owner info and chat
           </p>
           <div className="flex justify-center gap-3">
             <Link href="/auth/login" className="bg-green-600 text-white px-4 py-2 rounded">
@@ -294,25 +296,21 @@ const fetchMessages = async (otherUserId: string) => {
         </div>
       )}
 
-      {/* ✅ Owner Info */}
       {session?.user && owner && (
         <div className="bg-white shadow p-4 rounded mb-6">
           <h2 className="font-bold text-lg mb-2">👤 Owner Info</h2>
-          <p><b>Name:</b> {owner.full_name}</p>
-          <p><b>Phone:</b> {owner.phone}</p>
-          <p><b>Address:</b> {owner.address}</p>
+          <p><strong>Name:</strong> {owner.full_name}</p>
+          <p><strong>Phone:</strong> {owner.phone}</p>
+          <p><strong>Address:</strong> {owner.address}</p>
         </div>
       )}
 
-      {/* ✅ Select item & Chat */}
       {session?.user && (
         <>
           <div className="bg-white shadow p-4 rounded mb-6">
             <h2 className="font-bold mb-2">🔁 Select your item for swap</h2>
             <p>
-              <strong className="text-red-600">
-                It is important to select item before you chat
-              </strong>
+              <strong className="text-red-600">Select your item before chatting</strong>
             </p>
             <select
               className="w-full border rounded p-2"
@@ -320,7 +318,7 @@ const fetchMessages = async (otherUserId: string) => {
               onChange={(e) => setMyItemId(e.target.value)}
             >
               <option value="">-- Choose your item --</option>
-              {myItems.map((mi) => (
+              {myItems.map(mi => (
                 <option key={mi.id} value={mi.id}>
                   {mi.title}
                 </option>
@@ -330,8 +328,9 @@ const fetchMessages = async (otherUserId: string) => {
 
           <div className="bg-white shadow p-4 rounded">
             <h2 className="font-bold text-lg mb-3">💬 Chat</h2>
+
             <div className="h-64 overflow-y-auto border rounded p-3 mb-3 bg-gray-50">
-              {messages.map((m) => (
+              {messages.map(m => (
                 <div
                   key={m.id}
                   className={`mb-2 p-2 rounded max-w-[75%] ${
@@ -352,11 +351,11 @@ const fetchMessages = async (otherUserId: string) => {
             <div className="flex gap-2">
               <input
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={e => setMessage(e.target.value)}
                 placeholder="Type a message..."
                 className="flex-1 border rounded p-2"
                 disabled={isOwner}
-                onKeyDown={(e) => {
+                onKeyDown={e => {
                   if (!isOwner && e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handleSend();
