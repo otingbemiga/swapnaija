@@ -20,7 +20,7 @@
     "import": "^0.0.6",
     "lucide-react": "^0.537.0",
     "naija-state-local-government": "^1.1.2",
-    "next": "^15.4.7",
+    "next": "15.4.10",
     "nigerian-states-lgas": "^1.0.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
